@@ -711,7 +711,7 @@ namespace Esprima
                         {
                             expr = ParseNewExpression();
                         }
-                        else if (MatchKeyword("static"))
+                        else if (MatchKeyword("static")) // ADHOC
                         {
                             NextToken();
 
@@ -3544,6 +3544,9 @@ namespace Esprima
                         case "while":
                             statement = ParseWhileStatement();
                             break;
+                        case "print": // ADHOC
+                            statement = ParsePrintStatement();
+                            break;
                         default:
                             statement = ParseExpressionStatement();
                             break;
@@ -3709,6 +3712,18 @@ namespace Esprima
             }
 
             return Finalize(node, new FinalizerStatement(right));
+        }
+
+        // ADHOC: Print Statement
+        private PrintStatement ParsePrintStatement()
+        {
+            var node = CreateNode();
+            ExpectKeyword("print");
+
+            var right = ParseExpression();
+            ConsumeSemicolon();
+
+            return Finalize(node, new PrintStatement(right));
         }
 
         private void ValidateParam2(ParsedParameters options, Token param, string? name)
@@ -4476,6 +4491,11 @@ namespace Esprima
             ConsumeSemicolon();
 
             return Finalize(node, new ImportDeclaration(NodeList.From(ref namespacePath), target));
+        }
+
+        private void ParsePrintExpression()
+        {
+
         }
 
         public void SetFileName(string fileName)

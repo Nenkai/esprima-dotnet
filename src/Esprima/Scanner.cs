@@ -97,6 +97,7 @@ namespace Esprima
             "instanceof",
             "undef", // ADHOC
             "ctor", // ADHOC
+            "print", // ADHOC (GT4 etc)
         };
 
         private static readonly HashSet<string> StrictModeReservedWords = new()

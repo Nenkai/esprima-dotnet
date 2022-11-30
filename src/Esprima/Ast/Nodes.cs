@@ -82,5 +82,6 @@
         MethodExpression,
         SourceFileStatement,
         ModuleConstructorStatement,
+        PrintStatement,
     };
 }
