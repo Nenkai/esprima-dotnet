@@ -1,16 +1,17 @@
 ﻿using Esprima.Utils;
+using System.Collections.Generic;
 
 namespace Esprima.Ast
 {
     // Adhoc
     public class PrintStatement : Statement
     {
-        public Expression Expression { get; }
+        public List<Expression> Expressions { get; }
 
-        public PrintStatement(Expression expression)
+        public PrintStatement(List<Expression> expression)
             : base(Nodes.PrintStatement)
         {
-            Expression = expression;
+            Expressions = expression;
         }
 
         public override NodeCollection ChildNodes => new();

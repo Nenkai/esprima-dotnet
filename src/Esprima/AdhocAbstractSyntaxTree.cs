@@ -3720,10 +3720,17 @@ namespace Esprima
             var node = CreateNode();
             ExpectKeyword("print");
 
-            var right = ParseExpression();
+            List<Expression> expressions = new List<Expression>();
+            do
+            {
+                var exp = ParseExpression();
+                expressions.Add(exp);
+            }
+            while (Match(","));
+
             ConsumeSemicolon();
 
-            return Finalize(node, new PrintStatement(right));
+            return Finalize(node, new PrintStatement(expressions));
         }
 
         private void ValidateParam2(ParsedParameters options, Token param, string? name)
