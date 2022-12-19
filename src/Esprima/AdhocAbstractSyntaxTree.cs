@@ -2526,7 +2526,7 @@ namespace Esprima
                     }
                     else
                     {
-                        elements.Push(ParsePatternWithDefault(ref parameters, kind));
+                        elements.Push(ParsePatternWithDefault(ref parameters, kind, arrayPattern: true));
                     }
 
                     if (!Match("]"))
@@ -2582,7 +2582,7 @@ namespace Esprima
             return Finalize(node, new ObjectPattern(NodeList.From(ref properties)));
         }
 
-        private Expression ParsePattern(ref ArrayList<Token> parameters, VariableDeclarationKind? kind = null)
+        private Expression ParsePattern(ref ArrayList<Token> parameters, VariableDeclarationKind? kind = null, bool arrayPattern = false)
         {
             Expression pattern;
 
@@ -2596,18 +2596,27 @@ namespace Esprima
             }
             else
             {
-                parameters.Push(_lookahead);
-                pattern = ParseVariableIdentifier(kind);
+                // ADHOC: Adhoc allows deconstruction directly into attributes and static paths
+                if (arrayPattern)
+                {
+                    parameters.Push(_lookahead);
+                    pattern = ParseLeftHandSideExpression();
+
+                }
+                else
+                {
+                    pattern = ParseVariableIdentifier(kind);
+                }
             }
 
             return pattern;
         }
 
-        private Expression ParsePatternWithDefault(ref ArrayList<Token> parameters, VariableDeclarationKind? kind = null)
+        private Expression ParsePatternWithDefault(ref ArrayList<Token> parameters, VariableDeclarationKind? kind = null, bool arrayPattern = false)
         {
             var startToken = _lookahead;
 
-            var pattern = ParsePattern(ref parameters, kind);
+            var pattern = ParsePattern(ref parameters, kind, arrayPattern);
             if (Match("="))
             {
                 NextToken();
@@ -2629,7 +2638,7 @@ namespace Esprima
 
             var token = NextToken();
 
-            // Hack (thanks podi)
+            // ADHOC HACK (thanks podi)
             if (token.Type == TokenType.Keyword && token.Value as string == "import")
                 token.Type = TokenType.Identifier;
 

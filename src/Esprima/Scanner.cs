@@ -835,7 +835,7 @@ namespace Esprima
                     break;
                 case ':':
                     ++Index;
-                    if (Source[Index] == ':')
+                    if (Index < Source.Length && Source[Index] == ':')
                     {
                         ++Index;
                         str = "::";
