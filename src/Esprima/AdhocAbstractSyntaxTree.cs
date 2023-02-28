@@ -3785,8 +3785,6 @@ namespace Esprima
         {
             var node = CreateNode();
 
-
-            Expect("...");
             var arg = ParsePattern(ref parameters);
             if (Match("="))
             {
@@ -3798,6 +3796,8 @@ namespace Esprima
                 ThrowError(Messages.ParameterAfterRestParameter);
             }
 
+            Expect("...");
+
             return Finalize(node, new RestElement(arg));
         }
 
@@ -3805,9 +3805,14 @@ namespace Esprima
         {
             var parameters = new ArrayList<Token>();
 
-            var param = Match("...")
-                ? ParseRestElement(ref parameters)
-                : ParsePatternWithDefault(ref parameters);
+            var param = ParsePatternWithDefault(ref parameters);
+            if (Match("..."))
+            {
+                Expect("...");
+
+                var node = CreateNode();
+                param = Finalize(node, new RestElement(param));
+            }
 
             for (var i = 0; i < parameters.Count; i++)
             {
