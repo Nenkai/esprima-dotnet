@@ -1755,13 +1755,11 @@ namespace Esprima
 
         public Token ScanSymbolLiteral()
         {
-            ++Index; // Skip $
-
             var cooked = GetStringBuilder();
             var terminated = false;
             var start = Index;
 
-            var head = Source[start] == '"';
+            var head = Source[start] == '\'';
             var tail = false;
             char? notEscapeSequenceHead = null;
             var rawOffset = 2;
@@ -1771,7 +1769,7 @@ namespace Esprima
             while (!Eof())
             {
                 var ch = Source[Index++];
-                if (ch == '"')
+                if (ch == '\'')
                 {
                     rawOffset = 1;
                     tail = true;
@@ -2212,8 +2210,8 @@ namespace Esprima
                 return ScanPunctuator();
             }
 
-            // $ - Symbol const literal
-            if (cp == 0x24)
+            // '...' - Symbol literal
+            if (cp == 0x27)
             {
                 return ScanSymbolLiteral();
             }
