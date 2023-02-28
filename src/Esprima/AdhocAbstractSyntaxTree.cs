@@ -1513,11 +1513,20 @@ namespace Esprima
             while (true)
             {
                 var optional = false;
+                var isComputedOptional = false;
                 if (Match("?."))
                 {
                     optional = true;
                     hasOptional = true;
                     Expect("?.");
+                }
+
+                if (Match("?["))
+                {
+                    optional = true;
+                    hasOptional = true;
+                    isComputedOptional = true;
+                    Expect("?[");
                 }
 
                 if (Match("("))
@@ -1559,6 +1568,15 @@ namespace Esprima
                     _context.IsAssignmentTarget = !optional;
 
                     Expect("[");
+                    var property = IsolateCoverGrammar(parseExpression);
+                    Expect("]");
+                    expr = Finalize(StartNode(startToken), new ComputedMemberExpression(expr, property, optional));
+                }
+                else if (isComputedOptional)
+                {
+                    _context.IsBindingElement = false;
+                    _context.IsAssignmentTarget = !optional;
+
                     var property = IsolateCoverGrammar(parseExpression);
                     Expect("]");
                     expr = Finalize(StartNode(startToken), new ComputedMemberExpression(expr, property, optional));

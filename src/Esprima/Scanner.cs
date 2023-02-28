@@ -832,6 +832,12 @@ namespace Esprima
                         str = "?.";
                     }
 
+                    if (Source[Index] == '[')
+                    {
+                        ++Index;
+                        str = "?[";
+                    }
+
                     break;
                 case ':':
                     ++Index;
