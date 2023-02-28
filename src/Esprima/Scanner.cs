@@ -1093,7 +1093,8 @@ namespace Esprima
             return new Token
             {
                 Type = TokenType.NumericLiteral,
-                NumericValue = numericValue,
+                NumericTokenType = NumericTokenType.Integer,
+                NumericValue = (int)numericValue,
                 Value = number,
                 Octal = octal,
                 LineNumber = LineNumber,
