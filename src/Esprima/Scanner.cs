@@ -89,7 +89,7 @@ namespace Esprima
             "import",
             "default",
             "finally",
-            "extends",
+            //"extends", ADHOC NOT SUPPORTED, uses ':' instead
             "function",
             "method", // ADHOC
             "continue",
@@ -2211,7 +2211,7 @@ namespace Esprima
                 return ScanPunctuator();
             }
 
-            // '...' - Symbol literal
+            // ' - Symbol literal
             if (cp == 0x27)
             {
                 return ScanSymbolLiteral();

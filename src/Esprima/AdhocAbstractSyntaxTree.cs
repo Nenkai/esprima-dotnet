@@ -4388,7 +4388,7 @@ namespace Esprima
                 : ParseVariableIdentifierAllowStatic();
 
             Expression? superClass = null;
-            if (MatchKeyword("extends"))
+            if (Match(":"))
             {
                 NextToken();
                 superClass = IsolateCoverGrammar(ParseStaticIdentifierName);
@@ -4416,7 +4416,7 @@ namespace Esprima
                 : null;
 
             Expression? superClass = null;
-            if (MatchKeyword("extends"))
+            if (Match(":"))
             {
                 NextToken();
                 superClass = IsolateCoverGrammar(ParseLeftHandSideExpressionAllowCall);
