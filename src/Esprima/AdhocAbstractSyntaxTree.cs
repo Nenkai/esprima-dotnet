@@ -3548,6 +3548,10 @@ namespace Esprima
                         case "var":
                             statement = ParseVariableStatement();
                             break;
+                        case "delegate":
+                            statement = ParseDelegateDefinition();
+                            break;
+
                         case "while":
                             statement = ParseWhileStatement();
                             break;
@@ -4450,12 +4454,6 @@ namespace Esprima
 
         private ImportDeclaration ParseImportDeclaration()
         {
-            // ADHOC
-            //if (_context.InFunctionBody)
-            //{
-            //    ThrowError(Messages.IllegalImportDeclaration);
-            //}
-
             var node = CreateNode();
             ExpectKeyword("import");
 
@@ -4510,9 +4508,15 @@ namespace Esprima
             return Finalize(node, new ImportDeclaration(NodeList.From(ref namespacePath), target));
         }
 
-        private void ParsePrintExpression()
+        private DelegateDefinition ParseDelegateDefinition()
         {
+            var node = CreateNode();
+            ExpectKeyword("delegate");
 
+            var identifier = ParseIdentifierName();
+            ConsumeSemicolon();
+
+            return Finalize(node, new DelegateDefinition(identifier));
         }
 
         public void SetFileName(string fileName)

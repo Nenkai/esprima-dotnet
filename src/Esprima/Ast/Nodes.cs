@@ -83,5 +83,6 @@
         SourceFileStatement,
         ModuleConstructorStatement,
         PrintStatement,
+        DelegateDefinition,
     };
 }
