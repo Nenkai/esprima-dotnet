@@ -1759,144 +1759,91 @@ namespace Esprima
             };
         }
 
-        public Token ScanSymbolLiteral()
+        public Token ScanIdentifierLiteral()
         {
             var cooked = GetStringBuilder();
             var terminated = false;
             var start = Index;
 
-            var head = Source[start] == '\'';
-            var tail = false;
-            char? notEscapeSequenceHead = null;
-            var rawOffset = 2;
-
             ++Index;
 
+            // Note: nil is allowed
             while (!Eof())
             {
                 var ch = Source[Index++];
-                if (ch == '\'')
+                if (ch == '`')
                 {
-                    rawOffset = 1;
-                    tail = true;
                     terminated = true;
                     break;
                 }
-                else if (notEscapeSequenceHead is not null)
+                else if (Character.IsLineTerminator(ch))
                 {
-                    continue;
+                    ThrowUnexpectedToken("Unexpected line terminator in identifier literal");
                 }
                 else if (ch == '\\')
                 {
                     ch = Source[Index++];
                     if (!Character.IsLineTerminator(ch))
                     {
-                        switch (ch)
-                        {
-                            case 'n':
-                                cooked.Append("\n");
-                                break;
-                            case 'r':
-                                cooked.Append("\r");
-                                break;
-                            case 't':
-                                cooked.Append("\t");
-                                break;
-                            case 'u':
-                                if (Source[Index] == '{')
-                                {
-                                    ++Index;
-                                    var unicodeCodePointEscape = TryToScanUnicodeCodePointEscape();
-                                    if (unicodeCodePointEscape is null)
-                                    {
-                                        notEscapeSequenceHead = 'u';
-                                    }
-                                    else
-                                    {
-                                        cooked.Append(unicodeCodePointEscape);
-                                    }
-                                }
-                                else
-                                {
-                                    if (!ScanHexEscape(ch, out var unescapedChar))
-                                    {
-                                        notEscapeSequenceHead = 'u';
-                                    }
-                                    else
-                                    {
-                                        cooked.Append(unescapedChar);
-                                    }
-                                }
+                        if (ch == 'n')
+                            ThrowUnexpectedToken("Unexpected line terminator in identifier literal");
 
-                                break;
-                            case 'x':
-                                if (!ScanHexEscape(ch, out var unescaped2))
-                                {
-                                    notEscapeSequenceHead = 'x';
-                                }
-                                else
-                                {
-                                    cooked.Append(unescaped2);
-                                }
-
-                                break;
-                            case 'b':
-                                cooked.Append("\b");
-                                break;
-                            case 'f':
-                                cooked.Append("\f");
-                                break;
-                            case 'v':
-                                cooked.Append("\v");
-                                break;
-
-                            default:
-                                if (ch == '0')
-                                {
-                                    if (Character.IsDecimalDigit(Source.CharCodeAt(Index)))
-                                    {
-                                        // NotEscapeSequence: \01 \02 and so on
-                                        notEscapeSequenceHead = '0';
-                                    }
-                                    else
-                                    {
-                                        cooked.Append("\0");
-                                    }
-                                }
-                                else if (Character.IsDecimalDigit(ch))
-                                {
-                                    // NotEscapeSequence: \1 \2
-                                    notEscapeSequenceHead = ch;
-                                }
-                                else
-                                {
-                                    cooked.Append(ch);
-                                }
-
-                                break;
-                        }
+                        cooked.Append(ch);
                     }
-                    else
-                    {
-                        ++LineNumber;
-                        if (ch == '\r' && Source[Index] == '\n')
-                        {
-                            ++Index;
-                        }
+                }
+                else
+                {
+                    cooked.Append(ch);
+                }
+            }
 
-                        LineStart = Index;
-                    }
+            if (!terminated)
+            {
+                ThrowUnexpectedToken();
+            }
+
+            return new Token
+            {
+                Type = TokenType.Identifier,
+                Value = cooked.ToString(),
+                LineNumber = LineNumber,
+                LineStart = LineStart,
+                Start = start,
+                End = Index
+            };
+        }
+
+        public Token ScanSymbolLiteral()
+        {
+            var cooked = GetStringBuilder();
+            var terminated = false;
+            var start = Index;
+
+            ++Index;
+
+            // Note: nil is allowed
+            while (!Eof())
+            {
+                var ch = Source[Index++];
+                if (ch == '\'')
+                {
+                    terminated = true;
+                    break;
                 }
                 else if (Character.IsLineTerminator(ch))
                 {
-                    ++LineNumber;
-                    if (ch == '\r' && Source[Index] == '\n')
+                    ThrowUnexpectedToken("Unexpected line terminator in identifier literal");
+                }
+                else if (ch == '\\')
+                {
+                    ch = Source[Index++];
+                    if (!Character.IsLineTerminator(ch))
                     {
-                        ++Index;
-                    }
+                        if (ch == 'n')
+                            ThrowUnexpectedToken("Unexpected line terminator in identifier literal");
 
-                    LineStart = Index;
-                    cooked.Append("\n");
+                        cooked.Append(ch);
+                    }
                 }
                 else
                 {
@@ -1912,11 +1859,7 @@ namespace Esprima
             return new Token
             {
                 Type = TokenType.SymbolLiteral,
-                Value = notEscapeSequenceHead is null ? cooked.ToString() : null,
-                RawTemplate = Source.Slice(start + 1, Index - rawOffset),
-                Head = head,
-                Tail = tail,
-                NotEscapeSequenceHead = notEscapeSequenceHead,
+                Value = cooked.ToString(),
                 LineNumber = LineNumber,
                 LineStart = LineStart,
                 Start = start,
@@ -2216,7 +2159,12 @@ namespace Esprima
                 return ScanPunctuator();
             }
 
-            // ' - Symbol literal
+            if (cp == 0x60)
+            {
+                return ScanIdentifierLiteral();
+            }
+
+            // ADHOC: ' - Symbol literal
             if (cp == 0x27)
             {
                 return ScanSymbolLiteral();

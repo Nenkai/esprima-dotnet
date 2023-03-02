@@ -1392,20 +1392,6 @@ namespace Esprima
             return Finalize(node, new Identifier((string?) id));
         }
 
-        private Expression ParseIdentifierOrPrivateIdentifierName()
-        {
-            var node = CreateNode();
-
-            var token = NextToken();
-
-            if (!IsIdentifierName(token))
-            {
-                return ThrowUnexpectedToken<Identifier>(token);
-            }
-
-            return Finalize(node, new Identifier((string?) token.Value));
-        }
-
         private Expression ParseNewExpression()
         {
             var node = CreateNode();
