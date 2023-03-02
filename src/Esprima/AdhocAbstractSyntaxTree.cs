@@ -2391,11 +2391,8 @@ namespace Esprima
                         statement = ParseSubroutineDeclaration();
                         break;
                     case "module":
-                        statement = ParseClassDeclaration();
-                        (statement as ClassDeclaration).IsModule = true;
-                        break;
                     case "class":
-                        statement = ParseClassDeclaration();
+                        statement = ParseClassOrModuleDeclaration();
                         break;
                     case "let":
                         ThrowUnexpectedToken(_lookahead, "let is not supported in Adhoc.");
@@ -3353,7 +3350,7 @@ namespace Esprima
                 if (MatchKeyword("class") || MatchKeyword("module"))
                 {
                     TolerateUnexpectedToken(_lookahead);
-                    body = ParseClassDeclaration();
+                    body = ParseClassOrModuleDeclaration();
                 }
                 else if (MatchKeyword("function"))
                 {
@@ -3527,9 +3524,6 @@ namespace Esprima
                         case "break":
                             statement = ParseBreakStatement();
                             break;
-                        case "ctor":
-                            statement = ParseCtorStatement();
-                            break;
 
                         case "continue":
                             statement = ParseContinueStatement();
@@ -3671,23 +3665,6 @@ namespace Esprima
 
             options.ParamSetAdd(key);
         }
-
-        /* ADHOC: MODULE_CONSTRUCTOR
-         * 
-         * Arbitrary syntax
-         * "ctor <identifier, attribute expression> { ... }"
-         * Real is probably "<variable> module { ... }" - Engine does not contain the "ctor" keyword in the list, so I don't know */
-        private Statement ParseCtorStatement()
-        {
-            var node = CreateNode();
-
-            NextToken();
-            var exp = IsolateCoverGrammar(parseLeftHandSideExpression);
-            var body = ParseStatement();
-
-            return Finalize(node, new ModuleConstructorStatement(exp, body));
-        }
-
 
         // ADHOC: UNDEF 
         private UndefStatement ParseUndefStatement()
@@ -4397,32 +4374,52 @@ namespace Esprima
             return Finalize(node, new YieldExpression(argument, delegat));
         }
 
-        private ClassDeclaration ParseClassDeclaration(bool identifierIsOptional = false)
+        private Statement ParseClassOrModuleDeclaration(bool identifierIsOptional = false)
         {
             var node = CreateNode();
 
             var previousStrict = _context.Strict;
             var previousAllowSuper = _context.AllowSuper;
             _context.Strict = true;
+
+            bool isModule = _lookahead.Value as string == "module";
             ExpectKeyword("class", "module");
 
-            var id = identifierIsOptional && _lookahead.Type != TokenType.Identifier
-                ? null
-                : ParseVariableIdentifierAllowStatic();
-
-            Expression? superClass = null;
-            if (Match(":"))
+            // ADHOC: Module Constructor
+            if (Match("("))
             {
                 NextToken();
-                superClass = IsolateCoverGrammar(ParseStaticIdentifierName);
-                _context.AllowSuper = true;
+                var expr = IsolateCoverGrammar(parseExpression);
+                Expect(")");
+
+                var classBody = ParseBlock();
+                _context.Strict = previousStrict;
+
+                return Finalize(node, new ModuleConstructorStatement(expr, classBody));
             }
+            else
+            {
+                // Regular class or module declaration
+                var id = identifierIsOptional && _lookahead.Type != TokenType.Identifier
+                    ? null
+                    : ParseVariableIdentifierAllowStatic();
 
-            var classBody = ParseBlock();
-            _context.Strict = previousStrict;
-            _context.AllowSuper = previousAllowSuper;
+                Expression? superClass = null;
 
-            return Finalize(node, new ClassDeclaration(id, superClass, classBody));
+                // ADHOC: ':' instead of extends
+                if (Match(":"))
+                {
+                    NextToken();
+                    superClass = IsolateCoverGrammar(ParseStaticIdentifierName);
+                    _context.AllowSuper = true;
+                }
+
+                var classBody = ParseBlock();
+                _context.Strict = previousStrict;
+                _context.AllowSuper = previousAllowSuper;
+
+                return Finalize(node, new ClassDeclaration(id, superClass, classBody) { IsModule = isModule });
+            }
         }
 
         private ClassExpression ParseClassExpression()

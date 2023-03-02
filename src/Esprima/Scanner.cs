@@ -96,7 +96,6 @@ namespace Esprima
             "debugger",
             "instanceof",
             "undef", // ADHOC
-            "ctor", // ADHOC
             "print", // ADHOC (GT4 etc)
         };
 
