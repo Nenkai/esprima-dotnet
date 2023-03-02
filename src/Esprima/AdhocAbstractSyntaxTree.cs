@@ -1538,14 +1538,14 @@ namespace Esprima
                         expr = new ArrowParameterPlaceHolder(NodeList.From(ref nodeArguments), true);
                     }
                 }
-                else if (Match("{"))
+                else if (Match(".*"))
                 {
+                    NextToken();
+
                     _context.IsBindingElement = false;
                     _context.IsAssignmentTarget = !optional;
 
-                    Expect("{");
-                    var property = IsolateCoverGrammar(parseExpression);
-                    Expect("}");
+                    var property = IsolateCoverGrammar(parseLeftHandSideExpressionAllowCall);
                     expr = Finalize(StartNode(startToken), new ObjectSelectorMemberExpression(expr, property, optional));
                 }
                 else if (Match("["))
