@@ -3110,10 +3110,6 @@ namespace Esprima
                 {
                     return ParseIncludeStatement();
                 }
-                else if (MatchContextualKeyword("require"))
-                {
-                    return ParseRequireStatement();
-                }
                 else if (MatchContextualKeyword("resetline"))
                 {
                     _lastSourceFileLineStart = 0; // Reset
@@ -3555,6 +3551,11 @@ namespace Esprima
                         case "while":
                             statement = ParseWhileStatement();
                             break;
+
+                        case "require":
+                            statement = ParseRequireStatement();
+                            break;
+
                         case "print": // ADHOC
                             statement = ParsePrintStatement();
                             break;
