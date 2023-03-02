@@ -3538,7 +3538,7 @@ namespace Esprima
                         case "function":
                             statement = ParseSubroutineDeclaration();
                             break;
-                        case "finally": // Adhoc: Object finalizer
+                        case "finally": // Adhoc: Scope/module finalizer
                             statement = ParseFinalizer();
                             break;
                         case "if":
@@ -3709,13 +3709,8 @@ namespace Esprima
             var node = CreateNode();
             ExpectKeyword("finally");
 
-            var right = ParseExpression();
-            if (right.Type != Nodes.ArrowFunctionExpression && right.Type != Nodes.FunctionExpression)
-            {
-                return ThrowError<FinalizerStatement>("Expected finalizer body to be a function expression or arrow function.", _lookahead.Value);
-            }
-
-            return Finalize(node, new FinalizerStatement(right));
+            var block = ParseBlock();
+            return Finalize(node, new FinalizerStatement(block));
         }
 
         // ADHOC: Print Statement

@@ -4,9 +4,9 @@ namespace Esprima.Ast
 {
     public class FinalizerStatement : Statement
     {
-        public Expression Body { get; }
+        public Statement Body { get; }
 
-        public FinalizerStatement(Expression body)
+        public FinalizerStatement(Statement body)
             : base(Nodes.FinalizerStatement)
         {
             Body = body;
