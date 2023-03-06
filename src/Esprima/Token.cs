@@ -76,5 +76,10 @@ namespace Esprima
             Value = null;
             RegexValue = null;
         }
+
+        public override string ToString()
+        {
+            return Value as string;
+        }
     }
 }

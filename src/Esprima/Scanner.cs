@@ -1731,7 +1731,6 @@ namespace Esprima
                         ++Index;
                     }
 
-                    LineStart = Index;
                     cooked.Append("\n");
                 }
                 else
