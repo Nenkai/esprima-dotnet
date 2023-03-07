@@ -48,7 +48,7 @@ namespace Esprima
             return /*ch == '$' ||*/ ch == '_' || // ADHOC: Don't make it clash with symbol consts
                    ch >= 'A' && ch <= 'Z' ||
                    ch >= 'a' && ch <= 'z' ||
-                   ch == '\\' ||
+                   // ch == '\\' || Why was this here?
                    ch >= 0x80 && NonAsciiIdentifierStart.IsMatch(ParserExtensions.CharToString(ch));
         }
 
@@ -58,7 +58,7 @@ namespace Esprima
                    ch >= 'A' && ch <= 'Z' ||
                    ch >= 'a' && ch <= 'z' ||
                    ch >= '0' && ch <= '9' ||
-                   ch == '\\' ||
+                   // ch == '\\' ||
                    ch >= 0x80 && NonAsciiIdentifierPart.IsMatch(ParserExtensions.CharToString(ch));
         }
 

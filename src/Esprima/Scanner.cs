@@ -787,6 +787,10 @@ namespace Esprima
                     ++Index;
                     break;
 
+                case '\\':
+                    ++Index;
+                    break;
+
                 case '.':
                     ++Index;
 
