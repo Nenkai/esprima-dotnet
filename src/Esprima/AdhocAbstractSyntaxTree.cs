@@ -3143,18 +3143,10 @@ namespace Esprima
         {
             var node = CreateNode();
             NextToken();
-            if (_lookahead.Type == TokenType.Template || _lookahead.Type == TokenType.StringLiteral)
-            {
-                RequireStatement require = new RequireStatement();
-                require.Path = ParseTemplateLiteral(false);
-                return Finalize(node, require);
-            }
-            else
-            {
-                return ThrowError<RequireStatement>("Expected string literal for include statement value.", _lookahead.Value);
-            }
 
-            return null;
+            RequireStatement require = new RequireStatement();
+            require.Path = ParseExpression();
+            return Finalize(node, require);
         }
 
 
