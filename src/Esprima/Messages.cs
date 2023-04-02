@@ -61,9 +61,9 @@
         public const string TemplateOctalLiteral = "Octal literals are not allowed in template strings.";
         public const string TemplateEscape89 = "\\8 and \\9 are not allowed in template strings.";
         public const string UnexpectedEOS = "Unexpected end of input";
-        public const string UnexpectedIdentifier = "Unexpected identifier";
+        public const string UnexpectedIdentifier = "Unexpected identifier \"{0}\"";
         public const string UnexpectedNumber = "Unexpected number";
-        public const string UnexpectedReserved = "Unexpected reserved word";
+        public const string UnexpectedReserved = "Unexpected reserved word \"{0}\"";
         public const string UnexpectedString = "Unexpected string";
         public const string UnexpectedSuper = "'super' keyword unexpected here";
         public const string UnexpectedTemplate = "Unexpected quasi {0}";

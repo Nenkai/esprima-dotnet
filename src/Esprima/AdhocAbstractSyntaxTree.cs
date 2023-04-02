@@ -3109,7 +3109,8 @@ namespace Esprima
                 _lastMarker.Line = line.Value - 1;
 
                 var fileToken = NextToken();
-                
+                SetFileName(fileToken.RawTemplate);
+
                 return new SourceFileStatement(fileToken.RawTemplate);
             }
             else
