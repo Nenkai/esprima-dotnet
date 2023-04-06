@@ -202,6 +202,11 @@ namespace Esprima
             _errorHandler.TolerateError(Index, LineNumber - LastSourceFileLineNumber, Index - LineStart + 1, message);
         }
 
+        public void SetFileName(string fileName)
+        {
+            _errorHandler.Source = fileName;
+        }
+
         private StringBuilder GetStringBuilder()
         {
             strb.Clear();
