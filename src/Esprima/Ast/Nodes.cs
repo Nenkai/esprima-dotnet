@@ -75,6 +75,7 @@
         IncludeStatement,
         ReferenceVariableExpression,
         FinalizerStatement,
+        SelfFinalizerExpression,
         MapExpression,
         AttributeDeclaration,
         RequireStatement,

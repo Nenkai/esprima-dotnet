@@ -693,7 +693,15 @@ namespace Esprima
                         else if (MatchKeyword("self"))
                         {
                             NextToken();
-                            expr = Finalize(node, new SelfExpression());
+
+                            if (MatchKeyword("finally"))
+                            {
+                                expr = ParseSelfFinalizer();
+                            }
+                            else
+                            {
+                                expr = Finalize(node, new SelfExpression());
+                            }
                         }
                         else if (MatchKeyword("yield"))
                         {
@@ -3673,6 +3681,16 @@ namespace Esprima
 
             var block = ParseBlock();
             return Finalize(node, new FinalizerStatement(block));
+        }
+
+        // ADHOC: self object finalizer
+        private SelfFinalizerExpression ParseSelfFinalizer()
+        {
+            var node = CreateNode();
+            ExpectKeyword("finally");
+
+            var block = ParseBlock();
+            return Finalize(node, new SelfFinalizerExpression(block));
         }
 
         // ADHOC: Print Statement
