@@ -2,18 +2,18 @@
 
 namespace Esprima.Ast
 {
-    public class ErrorExpression : Expression
+    public sealed class ErrorStatement : Statement
     {
-        public ErrorExpression() : base(Nodes.ExpressionStatement)
+        public ErrorStatement() : base(Nodes.ReturnStatement)
         {
-            
+
         }
 
         public override NodeCollection ChildNodes => new();
 
         protected internal override void Accept(AstVisitor visitor)
         {
-
+            
         }
     }
 }

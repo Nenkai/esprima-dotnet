@@ -16,7 +16,9 @@ namespace Esprima
 
         public static void ThrowArgumentOutOfRangeException(string paramName, object actualValue, string? message = null)
         {
-            throw new ArgumentOutOfRangeException(paramName, actualValue, message);
+           throw new ArgumentOutOfRangeException(paramName, actualValue, message);
+
+            
         }
 
         public static T ThrowInvalidOperationException<T>(string? message = null)

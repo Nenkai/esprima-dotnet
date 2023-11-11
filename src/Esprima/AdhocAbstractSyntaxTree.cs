@@ -366,7 +366,7 @@ namespace Esprima
             var token = NextToken();
             if (token.Type != TokenType.Punctuator || !value.Equals(token.Value))
             {
-                ThrowUnexpectedToken(token);
+                TolerateUnexpectedToken(token);
             }
         }
 
@@ -408,7 +408,7 @@ namespace Esprima
             var token = NextToken();
             if (token.Type != TokenType.Keyword || !keyword.Equals(token.Value))
             {
-                ThrowUnexpectedToken(token);
+                TolerateUnexpectedToken(token);
             }
         }
 
@@ -434,6 +434,15 @@ namespace Esprima
         private bool Match(string value)
         {
             return _lookahead.Type == TokenType.Punctuator && value.Equals(_lookahead.Value);
+        }
+
+        /// <summary>
+        /// Return true if reached EOF.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool IsEndOfFile()
+        {
+            return _lookahead.Type == TokenType.EOF;
         }
 
         /// <summary>
@@ -513,7 +522,7 @@ namespace Esprima
             var result = parseFunction();
             if (_context.FirstCoverInitializedNameError != null)
             {
-                ThrowUnexpectedToken(_context.FirstCoverInitializedNameError);
+                TolerateUnexpectedToken(_context.FirstCoverInitializedNameError);
             }
 
             _context.IsBindingElement = previousIsBindingElement;
@@ -550,9 +559,9 @@ namespace Esprima
             }
             else if (!_hasLineTerminator)
             {
-                if (_lookahead.Type != TokenType.EOF && !Match("}"))
+                if (!IsEndOfFile() && !Match("}"))
                 {
-                    ThrowUnexpectedToken(_lookahead);
+                    TolerateUnexpectedToken(_lookahead);
                 }
 
                 _lastMarker.Index = _startMarker.Index;
@@ -593,9 +602,7 @@ namespace Esprima
                     token = NextToken();
                     raw = GetTokenRaw(token);
 
-                    
                     expr = Finalize(node, new Literal((string?)token.Value, raw));
-                    
                     break;
 
                 case TokenType.NumericLiteral:
@@ -668,7 +675,10 @@ namespace Esprima
                             expr = Finalize(node, new Literal(token.RegexValue!.Pattern, token.RegexValue.Flags, token.Value, raw));
                             break;
                         default:
-                            return ThrowUnexpectedToken<Expression>(NextToken());
+                            TolerateUnexpectedToken(_lookahead);
+                            NextToken();
+
+                            return Finalize(node, new ErrorExpression());
                     }
 
                     break;
@@ -715,24 +725,6 @@ namespace Esprima
                         {
                             expr = ParseNewExpression();
                         }
-                        else if (MatchKeyword("static")) // ADHOC
-                        {
-                            NextToken();
-
-                            var exp = ParseAssignmentExpression();
-                            var staticExpr = new StaticVariableDefinition(exp.Location);
-                            staticExpr.VarExpression = exp;
-                            expr = Finalize(node, staticExpr);
-                        }
-                        else if (MatchKeyword("attribute")) // ADHOC
-                        {
-                            NextToken();
-
-                            var exp = ParseAssignmentExpression();
-                            var attrExp = new AttributeVariableDefinition(Nodes.AttributeDeclaration, exp.Location);
-                            attrExp.VarExpression = exp;
-                            expr = Finalize(node, attrExp);
-                        }
                         else if (MatchKeyword("import")) // ADHOC
                         {
                             var decl = ParseImportDeclaration();
@@ -740,13 +732,19 @@ namespace Esprima
                         }
                         else
                         {
-                            return ThrowUnexpectedToken<Expression>(NextToken());
+                            TolerateUnexpectedToken(_lookahead);
+                            NextToken();
+
+                            return Finalize(node, new ErrorExpression());
                         }
                     }
 
                     break;
                 default:
-                    return ThrowUnexpectedToken<Expression>(NextToken());
+                    TolerateUnexpectedToken(_lookahead);
+                    NextToken();
+
+                    return Finalize(node, new ErrorExpression());
             }
 
             return expr;
@@ -758,17 +756,17 @@ namespace Esprima
             switch (token.NotEscapeSequenceHead)
             {
                 case 'u':
-                    ThrowUnexpectedToken(token, Messages.InvalidUnicodeEscapeSequence);
+                    TolerateUnexpectedToken(token, Messages.InvalidUnicodeEscapeSequence);
                     break;
                 case 'x':
-                    ThrowUnexpectedToken(token, Messages.InvalidHexEscapeSequence);
+                    TolerateUnexpectedToken(token, Messages.InvalidHexEscapeSequence);
                     break;
                 case '8':
                 case '9':
-                    ThrowUnexpectedToken(token, Messages.TemplateEscape89);
+                    TolerateUnexpectedToken(token, Messages.TemplateEscape89);
                     break;
                 default: // For 0-7
-                    ThrowUnexpectedToken(token, Messages.TemplateOctalLiteral);
+                    TolerateUnexpectedToken(token, Messages.TemplateOctalLiteral);
                     break;
             }
         }
@@ -803,6 +801,12 @@ namespace Esprima
             // ADHOC: Added Map/KV support
             while (!Match("]"))
             {
+                if (IsEndOfFile())
+                {
+                    TolerateUnexpectedToken(_lookahead);
+                    break;
+                }
+
                 if (Match(","))
                 {
                     NextToken();
@@ -811,7 +815,10 @@ namespace Esprima
                 else if (Match(":"))
                 {
                     if (arrElements.Count > 0)
-                        ThrowUnexpectedToken<Expression>(cacheToken, "Found mixed map and array elements in expression.");
+                    {
+                        TolerateUnexpectedToken(_lookahead, "Found mixed map and array elements in expression.");
+                        break;
+                    }
 
                     isMap = true;
                     NextToken(); // Empty Map
@@ -822,7 +829,10 @@ namespace Esprima
                     if (Match(":"))
                     {
                         if (arrElements.Count > 0)
-                            ThrowUnexpectedToken<Expression>(cacheToken, "Found mixed map and array elements in expression.");
+                        {
+                            TolerateUnexpectedToken(_lookahead, "Found mixed map and array elements in expression.");
+                            break;
+                        }
 
                         isMap = true;
                         NextToken();
@@ -831,7 +841,8 @@ namespace Esprima
                     }
                     else if (isMap)
                     {
-                        ThrowUnexpectedToken<Expression>(cacheToken, "Element is a map, expected key/value.");
+                        TolerateUnexpectedToken(_lookahead, "Element is a map, expected key/value.");
+                        break;
                     }
                     else
                     {
@@ -956,13 +967,16 @@ namespace Esprima
                     }
                     else
                     {
-                        return ThrowUnexpectedToken<Expression>(token);
+                        TolerateUnexpectedToken(_lookahead);
+                        key = Finalize(node, new ErrorExpression());
                     }
 
                     break;
 
                 default:
-                    return ThrowUnexpectedToken<Expression>(token);
+                    TolerateUnexpectedToken(_lookahead);
+                    key = Finalize(node, new ErrorExpression());
+                    break;
             }
 
             return key;
@@ -1051,7 +1065,7 @@ namespace Esprima
         {
             if (_lookahead.Type != TokenType.Template)
             {
-                ThrowUnexpectedToken();
+                TolerateUnexpectedToken(_lookahead);
             }
 
             var node = CreateNode();
@@ -1077,6 +1091,12 @@ namespace Esprima
             quasis.Add(quasi);
             while (!quasi.Tail)
             {
+                if (IsEndOfFile())
+                {
+                    TolerateUnexpectedToken(_lookahead);
+                    break;
+                }
+
                 expressions.Add(ParseExpression());
                 quasi = ParseTemplateElement(isTagged);
                 if (!string.IsNullOrEmpty(quasi.Value.Cooked))
@@ -1204,8 +1224,14 @@ namespace Esprima
 
                         _context.IsAssignmentTarget = false;
                         expressions.Add(expr);
-                        while (_lookahead.Type != TokenType.EOF)
+                        while (true)
                         {
+                            if (IsEndOfFile())
+                            {
+                                TolerateUnexpectedToken(_lookahead);
+                                break;
+                            }
+
                             if (!Match(","))
                             {
                                 break;
@@ -1227,7 +1253,7 @@ namespace Esprima
                             {
                                 if (!_context.IsBindingElement)
                                 {
-                                    ThrowUnexpectedToken(_lookahead);
+                                    TolerateUnexpectedToken(_lookahead);
                                 }
 
                                 expressions.Add(ParseRestElement(ref parameters));
@@ -1280,7 +1306,7 @@ namespace Esprima
                             {
                                 if (!_context.IsBindingElement)
                                 {
-                                    ThrowUnexpectedToken(_lookahead);
+                                    TolerateUnexpectedToken(_lookahead);
                                 }
 
                                 if (expr.Type == Nodes.SequenceExpression)
@@ -1330,6 +1356,12 @@ namespace Esprima
             {
                 while (true)
                 {
+                    if (IsEndOfFile())
+                    {
+                        TolerateUnexpectedToken(_lookahead);
+                        break;
+                    }
+
                     var expr = Match("...")
                         ? ParseSpreadElement()
                         : IsolateCoverGrammar(parseAssignmentExpression);
@@ -1369,7 +1401,8 @@ namespace Esprima
 
             if (!IsIdentifierName(token))
             {
-                return ThrowUnexpectedToken<Identifier>(token);
+                TolerateUnexpectedToken(token);
+                return Finalize(node, new Identifier(null));
             }
 
             return Finalize(node, new Identifier((string?) token.Value));
@@ -1380,7 +1413,10 @@ namespace Esprima
             var node = CreateNode();
             var token = NextToken();
             if (!IsIdentifierName(token))
-                return ThrowUnexpectedToken<Identifier>(token);
+            {
+                TolerateUnexpectedToken(token);
+                return Finalize(node, new Identifier(null));
+            }
 
             string id = token.Value as string;
 
@@ -1388,8 +1424,13 @@ namespace Esprima
             {
                 id += NextToken().Value as string;
                 token = NextToken();
+
                 if (!IsIdentifierName(token))
-                    return ThrowUnexpectedToken<Identifier>(token);
+                {
+                    TolerateUnexpectedToken(_lookahead);
+                    break;
+                }
+
                 id += token.Value as string;
             }
 
@@ -1414,12 +1455,14 @@ namespace Esprima
                 }
                 else
                 {
-                    return ThrowUnexpectedToken<Expression>(_lookahead);
+                    TolerateUnexpectedToken(_lookahead);
+                    return Finalize(node, new ErrorExpression());
                 }
             }
             else if (MatchKeyword("import"))
             {
-                return ThrowUnexpectedToken<Expression>(_lookahead);
+                TolerateUnexpectedToken(_lookahead);
+                return Finalize(node, new ErrorExpression());
             }
             else
             {
@@ -1449,6 +1492,12 @@ namespace Esprima
             {
                 while (true)
                 {
+                    if (IsEndOfFile())
+                    {
+                        TolerateUnexpectedToken(_lookahead);
+                        break;
+                    }
+
                     var expr = Match("...") ? ParseSpreadElement() : IsolateCoverGrammar(ParseAsyncArgument);
                     args.Add(expr);
                     if (Match(")"))
@@ -1486,7 +1535,7 @@ namespace Esprima
                 expr = Finalize(node, new Super());
                 if (!Match("(") && !Match(".") && !Match("["))
                 {
-                    ThrowUnexpectedToken(_lookahead);
+                    TolerateUnexpectedToken(_lookahead);
                 }
             }
             else
@@ -1502,6 +1551,12 @@ namespace Esprima
             var hasOptional = false;
             while (true)
             {
+                if (IsEndOfFile())
+                {
+                    TolerateUnexpectedToken(_lookahead);
+                    break;
+                }
+
                 var optional = false;
                 var isComputedOptional = false;
                 if (Match("?."))
@@ -1577,12 +1632,12 @@ namespace Esprima
                     // https://github.com/tc39/proposal-optional-chaining/issues/54
                     if (optional)
                     {
-                        ThrowUnexpectedToken(_lookahead);
+                        TolerateUnexpectedToken(_lookahead);
                     }
 
                     if (hasOptional)
                     {
-                        ThrowError(Messages.InvalidTaggedTemplateOnOptionalChain);
+                        TolerateError(Messages.InvalidTaggedTemplateOnOptionalChain);
                     }
 
                     var quasi = ParseTemplateLiteral(true);
@@ -1607,7 +1662,7 @@ namespace Esprima
 
                         property = Finalize(StartNode(startToken), new StaticMemberExpression(property, property2, optional));
                     }
-                    
+
                     expr = Finalize(StartNode(startToken), new AttributeMemberExpression(expr, property, optional));
                 }
                 else if (Match("::") || optional)
@@ -1645,7 +1700,7 @@ namespace Esprima
             ExpectKeyword("super");
             if (!Match("[") && !Match("."))
             {
-                ThrowUnexpectedToken(_lookahead);
+                TolerateUnexpectedToken(_lookahead);
             }
 
             return Finalize(node, new Super());
@@ -1688,12 +1743,12 @@ namespace Esprima
                     // https://github.com/tc39/proposal-optional-chaining/issues/54
                     if (optional)
                     {
-                        ThrowUnexpectedToken(_lookahead);
+                        TolerateUnexpectedToken(_lookahead);
                     }
 
                     if (hasOptional)
                     {
-                        ThrowError(Messages.InvalidTaggedTemplateOnOptionalChain);
+                        TolerateError(Messages.InvalidTaggedTemplateOnOptionalChain);
                     }
 
                     var quasi = ParseTemplateLiteral(true);
@@ -1810,14 +1865,19 @@ namespace Esprima
             if (Match("+") || Match("-") || Match("~") || Match("!") ||  MatchKeyword("void") || MatchKeyword("typeof") ||
                 Match("*") || Match("&")) // ADHOC
             {
+                // ADHOC: We can assign with references, i.e *val = 1;
+                bool canAssign = Match("*") || Match("&");
+
                 var node = StartNode(_lookahead);
                 var token = NextToken();
                 expr = InheritCoverGrammar(parseUnaryExpression);
                 expr = Finalize(node, new UnaryExpression((string?) token.Value, expr));
-                var unaryExpr = expr.As<UnaryExpression>();
 
-                _context.IsAssignmentTarget = false;
-                _context.IsBindingElement = false;
+                if (!canAssign)
+                {
+                    _context.IsAssignmentTarget = false;
+                    _context.IsBindingElement = false;
+                }
             }
             else if (_context.IsAsync && MatchContextualKeyword("await"))
             {
@@ -1996,7 +2056,7 @@ namespace Esprima
                     if (!allowAndOr && ("&&".Equals(_lookahead.Value) || "||".Equals(_lookahead.Value)) ||
                         !allowNullishCoalescing && "??".Equals(_lookahead.Value))
                     {
-                        ThrowUnexpectedToken(_lookahead);
+                        TolerateUnexpectedToken(_lookahead);
                     }
 
                     UpdateNullishCoalescingRestrictions(_lookahead);
@@ -2139,7 +2199,7 @@ namespace Esprima
                         var yieldExpression = assignment.Right.As<YieldExpression>();
                         if (yieldExpression.Argument != null)
                         {
-                            ThrowUnexpectedToken(_lookahead);
+                            TolerateUnexpectedToken(_lookahead);
                         }
 
                         assignment.Right = new Identifier("yield") { Location = assignment.Right.Location, Range = assignment.Right.Range };
@@ -2147,7 +2207,7 @@ namespace Esprima
                 }
                 else if (asyncArrow && param.Type == Nodes.Identifier && param.As<Identifier>().Name == "await")
                 {
-                    ThrowUnexpectedToken(_lookahead);
+                    TolerateUnexpectedToken(_lookahead);
                 }
 
                 CheckPatternParam(options, param);
@@ -2161,7 +2221,7 @@ namespace Esprima
                     var param = parameters[i];
                     if (param.Type == Nodes.YieldExpression)
                     {
-                        ThrowUnexpectedToken(_lookahead);
+                        TolerateUnexpectedToken(_lookahead);
                     }
                 }
             }
@@ -2169,7 +2229,7 @@ namespace Esprima
             if (options.HasDuplicateParameterNames)
             {
                 var token = _context.Strict ? options.Stricted : options.FirstRestricted;
-                ThrowUnexpectedToken(token, Messages.DuplicateParameter);
+                TolerateUnexpectedToken(token, Messages.DuplicateParameter);
             }
 
             return new ParsedParameters
@@ -2191,7 +2251,7 @@ namespace Esprima
 
             if (_assignmentDepth++ > MaxAssignmentDepth)
             {
-                ThrowUnexpectedToken(_lookahead, "Maximum statements depth reached");
+                TolerateUnexpectedToken(_lookahead, "Maximum statements depth reached");
             }
 
             if (!_context.AllowYield && MatchKeyword("yield"))
@@ -2226,10 +2286,12 @@ namespace Esprima
 
                     if (list != null)
                     {
+                        /* ADHOC: Not needed
                         if (_hasLineTerminator)
                         {
                             TolerateUnexpectedToken(_lookahead);
                         }
+                        */
 
                         _context.FirstCoverInitializedNameError = null;
 
@@ -2262,7 +2324,7 @@ namespace Esprima
 
                         if (_context.Strict && list.FirstRestricted != null)
                         {
-                            ThrowUnexpectedToken(list.FirstRestricted, list.Message);
+                            TolerateUnexpectedToken(list.FirstRestricted, list.Message);
                         }
 
                         if (_context.Strict && list.Stricted != null)
@@ -2369,11 +2431,6 @@ namespace Esprima
                 switch ((string?) _lookahead.Value)
                 {
                     case "import":
-                        if (!_context.IsModule)
-                        {
-                            TolerateUnexpectedToken(_lookahead, Messages.IllegalImportDeclaration);
-                        }
-
                         statement = ParseImportDeclaration();
                         break;
                     case "function":
@@ -2385,8 +2442,8 @@ namespace Esprima
                         statement = ParseClassOrModuleDeclaration();
                         break;
                     case "let":
-                        ThrowUnexpectedToken(_lookahead, "let is not supported in Adhoc.");
-                        statement = null;
+                        TolerateUnexpectedToken(_lookahead, "let is not supported in Adhoc.");
+                        statement = new ErrorStatement();
                         break;
                     default:
                         statement = ParseStatement();
@@ -2409,7 +2466,7 @@ namespace Esprima
             var block = new ArrayList<Statement>();
             while (true)
             {
-                if (Match("}"))
+                if (Match("}") || IsEndOfFile())
                 {
                     break;
                 }
@@ -2490,11 +2547,19 @@ namespace Esprima
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private VariableDeclarationKind ParseVariableDeclarationKind(string? kindString)
         {
-            return kindString switch
+            VariableDeclarationKind kind = kindString switch
             {
                 "var" => VariableDeclarationKind.Var,
-                _ => ThrowError<VariableDeclarationKind>("Unknown declaration kind '{0}'", kindString)
+                "static" => VariableDeclarationKind.Static,
+                "attribute" => VariableDeclarationKind.Attribute,
+                "delegate" => VariableDeclarationKind.Delegate,
+                _ => VariableDeclarationKind.Invalid
             };
+
+            if (kind == VariableDeclarationKind.Invalid)
+                TolerateError("Unknown declaration kind '{0}'", kindString);
+
+            return kind;
         }
 
         // https://tc39.github.io/ecma262/#sec-destructuring-binding-patterns
@@ -2515,8 +2580,14 @@ namespace Esprima
 
             Expect("[");
             var elements = new ArrayList<Expression?>();
-            while (!Match("]"))
+            while (!Match("]") )
             {
+                if (IsEndOfFile())
+                {
+                    TolerateUnexpectedToken(_lookahead);
+                    break;
+                }
+
                 if (Match(","))
                 {
                     NextToken();
@@ -2556,12 +2627,12 @@ namespace Esprima
             var arg = ParsePattern(ref parameters);
             if (Match("="))
             {
-                ThrowError(Messages.DefaultRestProperty);
+                TolerateError(Messages.DefaultRestProperty);
             }
 
             if (!Match("}"))
             {
-                ThrowError(Messages.PropertyAfterRestProperty);
+                TolerateError(Messages.PropertyAfterRestProperty);
             }
 
             return Finalize(node, new RestElement(arg));
@@ -2575,6 +2646,12 @@ namespace Esprima
             Expect("{");
             while (!Match("}"))
             {
+                if (IsEndOfFile())
+                {
+                    TolerateUnexpectedToken(_lookahead);
+                    break;
+                }
+
                 properties.Push(ParseRestProperty(ref parameters, kind)); // Changed for ADHOc, fix me maybe
                 if (!Match("}"))
                 {
@@ -2656,7 +2733,7 @@ namespace Esprima
 
                 if (!_context.AllowYield)
                 {
-                    ThrowUnexpectedToken(token);
+                    TolerateUnexpectedToken(token);
                 }
             }
             else if (token.Type != TokenType.Identifier)
@@ -2670,7 +2747,7 @@ namespace Esprima
                     var stringValue = token.Value as string;
                     if (_context.Strict || stringValue == null || kind != VariableDeclarationKind.Var)
                     {
-                        ThrowUnexpectedToken(token);
+                        TolerateUnexpectedToken(token);
                     }
                 }
             }
@@ -2695,7 +2772,7 @@ namespace Esprima
 
                 if (!_context.AllowYield)
                 {
-                    ThrowUnexpectedToken(token);
+                    TolerateUnexpectedToken(token);
                 }
             }
             else if (token.Type != TokenType.Identifier)
@@ -2709,7 +2786,7 @@ namespace Esprima
                     var stringValue = token.Value as string;
                     if (_context.Strict || stringValue == null || kind != VariableDeclarationKind.Var)
                     {
-                        ThrowUnexpectedToken(token);
+                        TolerateUnexpectedToken(token);
                     }
                 }
             }
@@ -2727,7 +2804,8 @@ namespace Esprima
                 str += token.Value;
             }
 
-            if (str.EndsWith("::"))
+            // TODO Fix
+            if (!string.IsNullOrEmpty(str) && str.EndsWith("::"))
                 str.Substring(0, str.Length - 2);
 
             return Finalize(node, new Identifier((string?)str));
@@ -2787,6 +2865,28 @@ namespace Esprima
             ConsumeSemicolon();
 
             return Finalize(node, new VariableDeclaration(declarations, VariableDeclarationKind.Var));
+        }
+
+        private StaticDeclaration ParseStaticStatement()
+        {
+            var node = CreateNode();
+            ExpectKeyword("static");
+
+            var exp = ParseAssignmentExpression();
+            ConsumeSemicolon();
+
+            return Finalize(node, new StaticDeclaration(exp, VariableDeclarationKind.Static));
+        }
+
+        private AttributeDeclaration ParseAttributeStatement()
+        {
+            var node = CreateNode();
+            ExpectKeyword("attribute");
+
+            var exp = ParseAssignmentExpression();
+            ConsumeSemicolon();
+
+            return Finalize(node, new AttributeDeclaration(exp, VariableDeclarationKind.Attribute));
         }
 
         // https://tc39.github.io/ecma262/#sec-empty-statement
@@ -3055,7 +3155,9 @@ namespace Esprima
             Statement body;
             if (!Match(")") && _config.Tolerant)
             {
-                TolerateUnexpectedToken(NextToken());
+                TolerateUnexpectedToken(_lookahead);
+                NextToken();
+
                 body = Finalize(CreateNode(), new EmptyStatement());
             }
             else
@@ -3090,14 +3192,14 @@ namespace Esprima
                 var key = label.Name;
                 if (!_context.LabelSet.Contains(key))
                 {
-                    return ThrowError<ContinueStatement>(Messages.UnknownLabel, label.Name);
+                    TolerateError(Messages.UnknownLabel, label.Name);
                 }
             }
 
             ConsumeSemicolon();
             if (label == null && !_context.InIteration)
             {
-                return ThrowError<ContinueStatement>(Messages.IllegalContinue);
+                TolerateError(Messages.IllegalContinue);
             }
 
             return Finalize(node, new ContinueStatement(label));
@@ -3121,12 +3223,20 @@ namespace Esprima
 
                 return new SourceFileStatement(fileToken.RawTemplate);
             }
+            else if (_lookahead.Type == TokenType.Identifier)
+            {
+                NextToken();
+                if (_lookahead.Value as string == "include")
+                    NextToken();
+
+                return new ErrorStatement(); // TODO: FIX ME!!
+            }
             else
             {
-                ThrowUnexpectedToken(_lookahead, "Unexpected token for preprocessor directive statement");
+                TolerateUnexpectedToken(_lookahead, "Unexpected token for preprocessor directive statement");
             }
 
-            return null;
+            return new ErrorStatement();
         }
 
         private IncludeStatement ParseIncludeStatement()
@@ -3142,7 +3252,7 @@ namespace Esprima
             }
             else
             {
-                return ThrowError<IncludeStatement>("Expected string literal for include statement value.", _lookahead.Value);
+                TolerateError("Expected string literal for include statement value.", _lookahead.Value);
             }
 
             return null;
@@ -3174,14 +3284,14 @@ namespace Esprima
                 var key = label.Name;
                 if (!_context.LabelSet.Contains(key))
                 {
-                    return ThrowError<BreakStatement>(Messages.UnknownLabel, label.Name);
+                    TolerateError(Messages.UnknownLabel, label.Name);
                 }
             }
 
             ConsumeSemicolon();
             if (label == null && !_context.InIteration && !_context.InSwitch)
             {
-                return ThrowError<BreakStatement>(Messages.IllegalBreak);
+                TolerateError(Messages.IllegalBreak);
             }
 
             return Finalize(node, new BreakStatement(label));
@@ -3233,6 +3343,12 @@ namespace Esprima
             var consequent = new ArrayList<Statement>();
             while (true)
             {
+                if (IsEndOfFile())
+                {
+                    TolerateUnexpectedToken(_lookahead);
+                    break;
+                }
+
                 if (Match("}") || MatchKeyword("default") || MatchKeyword("case"))
                 {
                     break;
@@ -3261,6 +3377,12 @@ namespace Esprima
             Expect("{");
             while (true)
             {
+                if (IsEndOfFile())
+                {
+                    TolerateUnexpectedToken(_lookahead);
+                    break;
+                }
+
                 if (Match("}"))
                 {
                     break;
@@ -3271,7 +3393,7 @@ namespace Esprima
                 {
                     if (defaultFound)
                     {
-                        ThrowError(Messages.MultipleDefaultsInSwitch);
+                        TolerateError(Messages.MultipleDefaultsInSwitch);
                     }
 
                     defaultFound = true;
@@ -3303,7 +3425,7 @@ namespace Esprima
                 var key = id.Name;
                 if (_context.LabelSet.Contains(key))
                 {
-                    ThrowError(Messages.Redeclaration, "Label", id.Name);
+                    TolerateError(Messages.Redeclaration, "Label", id.Name);
                 }
 
                 _context.LabelSet.Add(key);
@@ -3355,7 +3477,7 @@ namespace Esprima
 
             if (_hasLineTerminator)
             {
-                ThrowError(Messages.NewlineAfterThrow);
+                TolerateError(Messages.NewlineAfterThrow);
             }
 
             var argument = ParseExpression();
@@ -3378,7 +3500,7 @@ namespace Esprima
                 Expect("(");
                 if (Match(")"))
                 {
-                    ThrowUnexpectedToken(_lookahead);
+                    TolerateUnexpectedToken(_lookahead);
                 }
 
                 var parameters = new ArrayList<Token>();
@@ -3428,7 +3550,7 @@ namespace Esprima
 
             if (handler == null && finalizer == null)
             {
-                return ThrowError<TryStatement>(Messages.NoCatchOrFinally);
+                TolerateError(Messages.NoCatchOrFinally);
             }
 
             return Finalize(node, new TryStatement(block, handler, finalizer));
@@ -3476,7 +3598,10 @@ namespace Esprima
                     break;
 
                 case TokenType.Identifier:
-                    statement = MatchAsyncFunction() ? ParseSubroutineDeclaration() : ParseLabelledStatement();
+                    if (MatchAsyncFunction())
+                        statement = ParseSubroutineDeclaration();
+                    else
+                        statement = ParseLabelledStatement();
                     break;
 
                 case TokenType.Keyword:
@@ -3520,11 +3645,18 @@ namespace Esprima
                         case "try":
                             statement = ParseTryStatement();
                             break;
+
                         case "var":
                             statement = ParseVariableStatement();
                             break;
-                        case "delegate":
-                            statement = ParseDelegateDefinition();
+                        case "static": // ADHOC
+                            statement = ParseStaticStatement();
+                            break;
+                        case "attribute": // ADHOC
+                            statement = ParseAttributeStatement();
+                            break;
+                        case "delegate": // ADHOC
+                            statement = ParseDelegateDeclaration();
                             break;
 
                         case "while":
@@ -3546,7 +3678,10 @@ namespace Esprima
                     break;
 
                 default:
-                    return ThrowUnexpectedToken<Statement>(_lookahead);
+                    TolerateUnexpectedToken(_lookahead);
+                    NextToken();
+
+                    return new ErrorStatement();
             }
 
             return statement;
@@ -3644,13 +3779,13 @@ namespace Esprima
 
             if (_hasLineTerminator)
             {
-                ThrowError(Messages.NewlineAfterThrow);
+                TolerateError(Messages.NewlineAfterThrow);
             }
 
 
             Token token = NextToken();
             if (token.Type != TokenType.Identifier)
-                ThrowError("Undef must be identifiers");
+                TolerateError("Undef must be identifiers");
 
             string str = token.Value as string;
 
@@ -3664,7 +3799,7 @@ namespace Esprima
                 }
                 else
                 {
-                    ThrowUnexpectedToken(_lookahead);
+                    TolerateUnexpectedToken(_lookahead);
                 }
             }
 
@@ -3758,12 +3893,12 @@ namespace Esprima
             var arg = ParsePattern(ref parameters);
             if (Match("="))
             {
-                ThrowError(Messages.DefaultRestParameter);
+                TolerateError(Messages.DefaultRestParameter);
             }
 
             if (!Match(")"))
             {
-                ThrowError(Messages.ParameterAfterRestParameter);
+                TolerateError(Messages.ParameterAfterRestParameter);
             }
 
             Expect("...");
@@ -3821,7 +3956,7 @@ namespace Esprima
 
             if (options.HasDuplicateParameterNames && (_context.Strict || !options.Simple))
             {
-                ThrowError(Messages.DuplicateParameter);
+                TolerateError(Messages.DuplicateParameter);
             }
 
             return new ParsedParameters
@@ -3866,7 +4001,7 @@ namespace Esprima
 
             bool isMethod = MatchKeyword("method");
             if (!MatchKeyword("function") && !isMethod)
-                ThrowUnexpectedToken(_lookahead);
+                TolerateUnexpectedToken(_lookahead);
             NextToken();
 
             var isGenerator = Match("*");
@@ -3925,7 +4060,7 @@ namespace Esprima
             var body = ParseFunctionSourceElements();
             if (_context.Strict && firstRestricted != null)
             {
-                ThrowUnexpectedToken(firstRestricted, message);
+                TolerateUnexpectedToken(firstRestricted, message);
             }
 
             if (_context.Strict && stricted != null)
@@ -4018,7 +4153,7 @@ namespace Esprima
             var body = ParseFunctionSourceElements();
             if (_context.Strict && firstRestricted != null)
             {
-                ThrowUnexpectedToken(firstRestricted, message);
+                TolerateUnexpectedToken(firstRestricted, message);
             }
 
             if (_context.Strict && stricted != null)
@@ -4106,7 +4241,7 @@ namespace Esprima
             var body = ParseFunctionSourceElements();
             if (_context.Strict && firstRestricted != null)
             {
-                ThrowUnexpectedToken(firstRestricted, message);
+                TolerateUnexpectedToken(firstRestricted, message);
             }
 
             if (_context.Strict && stricted != null)
@@ -4150,6 +4285,11 @@ namespace Esprima
             while (true)
             {
                 var token = _lookahead;
+                if (IsEndOfFile())
+                {
+                    break;
+                }
+
                 if (token.Type != TokenType.StringLiteral)
                 {
                     break;
@@ -4474,7 +4614,7 @@ namespace Esprima
                             continue;
                         }
                         else
-                            ThrowUnexpectedToken(_lookahead);
+                            TolerateUnexpectedToken(_lookahead);
                     }
                     else if (Match("*"))
                     {
@@ -4487,7 +4627,7 @@ namespace Esprima
             }
             else
             {
-                ThrowUnexpectedToken(NextToken());
+                TolerateUnexpectedToken(NextToken());
             }
 
             if (target is null && namespacePath.Count >= 2)
@@ -4498,7 +4638,7 @@ namespace Esprima
             return Finalize(node, new ImportDeclaration(NodeList.From(ref namespacePath), target));
         }
 
-        private DelegateDefinition ParseDelegateDefinition()
+        private DelegateDeclaration ParseDelegateDeclaration()
         {
             var node = CreateNode();
             ExpectKeyword("delegate");
@@ -4506,7 +4646,7 @@ namespace Esprima
             var identifier = ParseIdentifierName();
             ConsumeSemicolon();
 
-            return Finalize(node, new DelegateDefinition(identifier));
+            return Finalize(node, new DelegateDeclaration(identifier, VariableDeclarationKind.Delegate));
         }
 
         public void SetFileName(string fileName)
@@ -4532,7 +4672,7 @@ namespace Esprima
             var index = _lastMarker.Index;
             var line = _lastMarker.Line;
             var column = _lastMarker.Column + 1;
-            return _errorHandler.CreateError(index, line, column, msg);
+            return _errorHandler.CreateError(index, index + 1, line, column, msg);
         }
 
 
@@ -4543,7 +4683,7 @@ namespace Esprima
             var index = _lastMarker.Index;
             var line = _scanner.LineNumber;
             var column = _lastMarker.Column + 1;
-            _errorHandler.TolerateError(index, line, column, msg);
+            _errorHandler.TolerateError(index, index + 1, line, column, msg);
         }
 
         private ParserException UnexpectedTokenError(Token? token, string? message = null)
@@ -4588,18 +4728,19 @@ namespace Esprima
 
             if (token != null && token.LineNumber > 0)
             {
-                var index = token.Start;
+                var startIndex = token.Start;
+                var endIndex = token.End;
                 var line = token.LineNumber;
                 var lastMarkerLineStart = _lastMarker.Index - _lastMarker.Column;
                 var column = token.Start - lastMarkerLineStart + 1;
-                return _errorHandler.CreateError(index, line, column, msg);
+                return _errorHandler.CreateError(startIndex, endIndex, line, column, msg);
             }
             else
             {
                 var index = _lastMarker.Index;
                 var line = _lastMarker.Line;
                 var column = _lastMarker.Column + 1;
-                return _errorHandler.CreateError(index, line, column, msg);
+                return _errorHandler.CreateError(index, index + 1, line, column, msg);
             }
         }
 
@@ -4610,7 +4751,7 @@ namespace Esprima
 
         private T ThrowUnexpectedToken<T>(Token? token = null, string? message = null)
         {
-            throw UnexpectedTokenError(token, message);
+             throw UnexpectedTokenError(token, message);
         }
 
         private void TolerateUnexpectedToken(Token token, string? message = null)

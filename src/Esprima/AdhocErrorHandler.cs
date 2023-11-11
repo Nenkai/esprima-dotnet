@@ -1,15 +1,28 @@
-﻿namespace Esprima
+﻿using System.Collections.Generic;
+
+namespace Esprima
 {
     /// <summary>
     /// Default error handling logic for Esprima.
     /// </summary>
-    public class ErrorHandler : IErrorHandler
+    public class AdhocErrorHandler : IErrorHandler
     {
         public string? Source { get; set; }
         public bool Tolerant { get; set; }
 
+        public List<ParseError> Errors { get; set; } = new();
+
+        public bool HasErrors()
+        {
+            return Errors.Count != 0;
+        }
+
         public virtual void RecordError(ParserException error)
         {
+            if (error.Error is null)
+                return;
+
+            Errors.Add(error.Error);
         }
 
         public void Tolerate(ParserException error)

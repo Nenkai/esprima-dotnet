@@ -3,13 +3,15 @@ using Esprima.Utils;
 
 namespace Esprima.Ast
 {
-    public class DelegateDefinition : Statement
+    public class DelegateDeclaration : Declaration
     {
+        public readonly VariableDeclarationKind Kind;
         public Identifier Identifier { get; set; }
 
-        public DelegateDefinition(Identifier identifier)
-            : base(Nodes.DelegateDefinition)
+        public DelegateDeclaration(Identifier identifier, VariableDeclarationKind kind)
+            : base(Nodes.DelegateDeclaration)
         {
+            Kind = kind;
             Identifier = identifier;
         }
 

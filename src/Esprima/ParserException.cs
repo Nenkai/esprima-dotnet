@@ -8,7 +8,7 @@ namespace Esprima
 
         public string? Description => Error?.Description;
         public string? SourceText => Error?.Source;
-        public int Index => Error?.Index ?? -1;
+        public int Index => Error?.StartIndex ?? -1;
         public int LineNumber => Error?.LineNumber ?? 0;
         public int Column => Error?.Column ?? 0;
 

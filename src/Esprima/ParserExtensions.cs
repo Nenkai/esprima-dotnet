@@ -18,6 +18,8 @@ namespace Esprima
 
         public static string Slice(this string source, int start, int end)
         {
+            // TODO: Fix this OOB
+
             var len = source.Length;
             var from = start < 0 ? Math.Max(len + start, 0) : Math.Min(start, len);
             var to = end < 0 ? Math.Max(len + end, 0) : Math.Min(end, len);

@@ -3,5 +3,9 @@
     public enum VariableDeclarationKind
     {
         Var,
+        Static,
+        Attribute,
+        Delegate,
+        Invalid,
     }
 }
