@@ -6,16 +6,16 @@ namespace Esprima.Ast
     {
         public readonly VariableDeclarationKind Kind;
 
-        public Expression Expression;
+        public VariableDeclarator Declaration;
 
-        public override NodeCollection ChildNodes => new NodeCollection(Expression);
+        public override NodeCollection ChildNodes => new NodeCollection(Declaration);
 
         public StaticDeclaration(
-            Expression expr,
+            VariableDeclarator expr,
             VariableDeclarationKind kind)
             : base(Nodes.StaticDeclaration)
         {
-            Expression = expr;
+            Declaration = expr;
             Kind = kind;
         }
 

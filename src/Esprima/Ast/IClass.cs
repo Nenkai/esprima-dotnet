@@ -5,7 +5,7 @@
     /// </summary>
     public interface IClass
     {
-        Identifier? Id { get; }
+        Expression? Id { get; }
         Expression? SuperClass { get; }
         Statement Body { get; }
         NodeCollection ChildNodes { get; }

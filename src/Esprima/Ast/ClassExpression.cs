@@ -4,8 +4,8 @@ namespace Esprima.Ast
 {
     public sealed class ClassExpression : Expression, IClass
     {
-        public readonly Identifier? Id;
-        Identifier? IClass.Id => Id;
+        public readonly Expression? Id;
+        Expression? IClass.Id => Id;
 
         public readonly Expression? SuperClass;
         Expression? IClass.SuperClass => SuperClass;
@@ -16,7 +16,7 @@ namespace Esprima.Ast
         public bool IsModule { get; set; }
 
         public ClassExpression(
-            Identifier? id,
+            Expression? id,
             Expression? superClass,
             Statement body) : base(Nodes.ClassExpression)
         {

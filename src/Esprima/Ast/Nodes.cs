@@ -85,5 +85,6 @@
         ModuleConstructorStatement,
         PrintStatement,
         DelegateDeclaration,
+        StaticIdentifier,
     };
 }

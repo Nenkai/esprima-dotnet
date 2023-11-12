@@ -1540,7 +1540,27 @@ namespace Esprima
             }
             else
             {
+                bool isTopLevelScopeResolution = Match("::");
+                var node = CreateNode();
+                if (isTopLevelScopeResolution)
+                    NextToken();
+
                 expr = MatchKeyword("new") ? InheritCoverGrammar(parseNewExpression) : InheritCoverGrammar(parsePrimaryExpression);
+                if (isTopLevelScopeResolution)
+                {
+                    if (expr.Type == Nodes.Identifier)
+                    {
+                        if (!Match("::")) // Pointless if next is scope navigation
+                        {
+                            var identifier = expr as Identifier;
+                            expr = Finalize(node, new StaticIdentifier(identifier));
+                        }
+                    }
+                    else
+                    {
+                        TolerateError("Scope resolution operator prefix is only applicable to identifiers");
+                    }
+                }
             }
 
             if (isSuper && (!_context.InClassConstructor || !_context.AllowSuper))
@@ -2759,10 +2779,15 @@ namespace Esprima
             return Finalize(node, new Identifier((string?) token.Value));
         }
 
-        private Identifier ParseVariableIdentifierAllowStatic(VariableDeclarationKind? kind = null)
+        private Expression ParseVariableIdentifierAllowStatic(VariableDeclarationKind? kind = null)
         {
             var node = CreateNode();
+            bool isTopLevelScopeResolution = Match("::");
+            if (isTopLevelScopeResolution)
+                NextToken();
+
             var token = NextToken();
+
             if (token.Type == TokenType.Keyword && (string?)token.Value == "yield")
             {
                 if (_context.Strict)
@@ -2808,7 +2833,11 @@ namespace Esprima
             if (!string.IsNullOrEmpty(str) && str.EndsWith("::"))
                 str.Substring(0, str.Length - 2);
 
-            return Finalize(node, new Identifier((string?)str));
+            var id = new Identifier((string?) str);
+            if (isTopLevelScopeResolution)
+                return Finalize(node, new StaticIdentifier(id));
+            else
+                return Finalize(node, id);
         }
 
         private VariableDeclarator ParseVariableDeclaration(ref bool inFor)
@@ -2872,7 +2901,8 @@ namespace Esprima
             var node = CreateNode();
             ExpectKeyword("static");
 
-            var exp = ParseAssignmentExpression();
+            var inFor = false;
+            var exp = ParseVariableDeclaration(ref inFor);
             ConsumeSemicolon();
 
             return Finalize(node, new StaticDeclaration(exp, VariableDeclarationKind.Static));

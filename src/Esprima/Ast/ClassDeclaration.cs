@@ -4,8 +4,8 @@ namespace Esprima.Ast
 {
     public sealed class ClassDeclaration : Declaration, IClass
     {
-        public readonly Identifier? Id;
-        Identifier? IClass.Id => Id;
+        public readonly Expression? Id; // Identifier || StaticIdentifier
+        Expression? IClass.Id => Id;
 
         public readonly Expression? SuperClass; // Identifier || CallExpression
         Expression? IClass.SuperClass => SuperClass;
@@ -15,7 +15,7 @@ namespace Esprima.Ast
 
         public bool IsModule { get; set; }
 
-        public ClassDeclaration(Identifier? id, Expression? superClass, Statement body) :
+        public ClassDeclaration(Expression? id, Expression? superClass, Statement body) :
             base(Nodes.ClassDeclaration)
         {
             Id = id;
