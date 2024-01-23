@@ -356,7 +356,6 @@ namespace Esprima.Utils
                     Member("body", functionDeclaration.Body);
                     Member("generator", functionDeclaration.Generator);
                     Member("expression", functionDeclaration.Expression);
-                    Member("async", functionDeclaration.Async);
                 }
             }
 
@@ -402,14 +401,6 @@ namespace Esprima.Utils
                 using (StartNodeObject(throwStatement))
                 {
                     Member("argument", throwStatement.Argument);
-                }
-            }
-
-            protected internal override void VisitAwaitExpression(AwaitExpression awaitExpression)
-            {
-                using (StartNodeObject(awaitExpression))
-                {
-                    Member("argument", awaitExpression.Argument);
                 }
             }
 
@@ -501,19 +492,6 @@ namespace Esprima.Utils
                 }
             }
 
-            protected internal override void VisitArrowFunctionExpression(ArrowFunctionExpression arrowFunctionExpression)
-            {
-                using (StartNodeObject(arrowFunctionExpression))
-                {
-                    Member("id", arrowFunctionExpression.Id);
-                    Member("params", arrowFunctionExpression.Params);
-                    Member("body", arrowFunctionExpression.Body);
-                    Member("generator", arrowFunctionExpression.Generator);
-                    Member("expression", arrowFunctionExpression.Expression);
-                    Member("async", arrowFunctionExpression.Async);
-                }
-            }
-
             protected internal override void VisitUnaryExpression(UnaryExpression unaryExpression)
             {
                 using (StartNodeObject(unaryExpression))
@@ -529,11 +507,6 @@ namespace Esprima.Utils
                 VisitUnaryExpression(updateExpression);
             }
 
-            protected internal override void VisitSelfExpression(SelfExpression thisExpression)
-            {
-                EmptyNodeObject(thisExpression);
-            }
-
             protected internal override void VisitSequenceExpression(SequenceExpression sequenceExpression)
             {
                 using (StartNodeObject(sequenceExpression))
@@ -547,15 +520,6 @@ namespace Esprima.Utils
                 using (StartNodeObject(objectExpression))
                 {
                     Member("properties", objectExpression.Properties);
-                }
-            }
-
-            protected internal override void VisitNewExpression(NewExpression newExpression)
-            {
-                using (StartNodeObject(newExpression))
-                {
-                    Member("callee", newExpression.Callee);
-                    Member("arguments", newExpression.Arguments, e => (Node) e);
                 }
             }
 
@@ -631,17 +595,6 @@ namespace Esprima.Utils
                     Member("body", function.Body);
                     Member("generator", function.Generator);
                     Member("expression", function.Expression);
-                    Member("async", function.Async);
-                }
-            }
-
-            protected internal override void VisitClassExpression(ClassExpression classExpression)
-            {
-                using (StartNodeObject(classExpression))
-                {
-                    Member("id", classExpression.Id);
-                    Member("superClass", classExpression.SuperClass);
-                    Member("body", classExpression.Body);
                 }
             }
 
@@ -654,47 +607,6 @@ namespace Esprima.Utils
             }
 
 
-            protected internal override void VisitImport(Import import)
-            {
-                using (StartNodeObject(import))
-                {
-                }
-            }
-
-            protected internal override void VisitImportDeclaration(ImportDeclaration importDeclaration)
-            {
-                using (StartNodeObject(importDeclaration))
-                {
-                    Member("specifiers", importDeclaration.Specifiers, e => (Node) e);
-                    Member("target", importDeclaration.Target);
-                }
-            }
-
-            protected internal override void VisitImportNamespaceSpecifier(ImportNamespaceSpecifier importNamespaceSpecifier)
-            {
-                using (StartNodeObject(importNamespaceSpecifier))
-                {
-                    Member("local", importNamespaceSpecifier.Local);
-                }
-            }
-
-            protected internal override void VisitImportDefaultSpecifier(ImportDefaultSpecifier importDefaultSpecifier)
-            {
-                using (StartNodeObject(importDefaultSpecifier))
-                {
-                    Member("local", importDefaultSpecifier.Local);
-                }
-            }
-
-            protected internal override void VisitImportSpecifier(ImportSpecifier importSpecifier)
-            {
-                using (StartNodeObject(importSpecifier))
-                {
-                    Member("local", importSpecifier.Local);
-                    Member("imported", importSpecifier.Imported);
-                }
-            }
-
             protected internal override void VisitForOfStatement(ForeachStatement forOfStatement)
             {
                 using (StartNodeObject(forOfStatement))
@@ -703,25 +615,6 @@ namespace Esprima.Utils
                     Member("left", forOfStatement.Left);
                     Member("right", forOfStatement.Right);
                     Member("body", forOfStatement.Body);
-                }
-            }
-
-            protected internal override void VisitClassDeclaration(ClassDeclaration classDeclaration)
-            {
-                using (StartNodeObject(classDeclaration))
-                {
-                    Member("id", classDeclaration.Id);
-                    Member("superClass", classDeclaration.SuperClass);
-                    Member("body", classDeclaration.Body);
-                }
-            }
-
-            protected internal override void VisitYieldExpression(YieldExpression yieldExpression)
-            {
-                using (StartNodeObject(yieldExpression))
-                {
-                    Member("argument", yieldExpression.Argument);
-                    Member("delegate", yieldExpression.Delegate);
                 }
             }
 

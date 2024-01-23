@@ -11,8 +11,7 @@ namespace Esprima.Ast
             in NodeList<Expression> parameters,
             BlockStatement body,
             bool generator,
-            bool strict,
-            bool async)
+            bool strict)
             : base(Nodes.FunctionDeclaration)
         {
             Id = id;
@@ -21,7 +20,6 @@ namespace Esprima.Ast
             Generator = generator;
             Expression = false;
             Strict = strict;
-            Async = async;
         }
 
         public Identifier? Id { get; }
@@ -29,7 +27,6 @@ namespace Esprima.Ast
         public Node Body { get; }
         public bool Generator { get; }
         public bool Expression { get; }
-        public bool Async { get; }
         public bool Strict { get; }
 
         public ref readonly NodeList<Expression> Params => ref _parameters;

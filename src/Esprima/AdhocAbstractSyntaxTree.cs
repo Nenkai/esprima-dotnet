@@ -48,7 +48,6 @@ namespace Esprima
             public bool AllowStrictDirective;
             public bool AllowSuper;
             public bool AllowYield;
-            public bool IsAsync;
             public Token? FirstCoverInitializedNameError;
             public bool IsAssignmentTarget;
             public bool IsBindingElement;
@@ -138,7 +137,6 @@ namespace Esprima
             parseExponentiationExpression = ParseExponentiationExpression;
             parseUnaryExpression = ParseUnaryExpression;
             parseExpression = ParseExpression;
-            parseNewExpression = ParseNewExpression;
             parsePrimaryExpression = ParsePrimaryExpression;
             parseGroupExpression = ParseGroupExpression;
             parseArrayOrMapInitializer = ParseArrayOrMapInitializer;
@@ -583,12 +581,7 @@ namespace Esprima
             switch (_lookahead.Type)
             {
                 case TokenType.Identifier:
-                    if ((_context.IsModule || _context.IsAsync) && "await".Equals(_lookahead.Value))
-                    {
-                        TolerateUnexpectedToken(_lookahead);
-                    }
-
-                    expr = MatchAsyncFunction() ? ParseFunctionExpression() : Finalize(node, new Identifier((string?) NextToken().Value));
+                    expr = Finalize(node, new Identifier((string?) NextToken().Value));
                     break;
 
                 case TokenType.StringLiteral:
@@ -602,7 +595,7 @@ namespace Esprima
                     token = NextToken();
                     raw = GetTokenRaw(token);
 
-                    expr = Finalize(node, new Literal((string?)token.Value, raw));
+                    expr = Finalize(node, new Literal((string?) token.Value, raw));
                     break;
 
                 case TokenType.NumericLiteral:
@@ -683,61 +676,14 @@ namespace Esprima
 
                     break;
                 case TokenType.Keyword:
+                    _context.IsAssignmentTarget = false;
+                    _context.IsBindingElement = false;
 
-                    if (!_context.Strict && _context.AllowYield && MatchKeyword("yield"))
-                    {
-                        expr = ParseYieldExpression();
-                    }
-                    else
-                    {
-                        _context.IsAssignmentTarget = false;
-                        _context.IsBindingElement = false;
-                        if (MatchKeyword("function"))
-                        {
-                            expr = ParseFunctionExpression();
-                        }
-                        else if (MatchKeyword("method"))
-                        {
-                            expr = ParseMethodExpression();
-                        }
-                        else if (MatchKeyword("self"))
-                        {
-                            NextToken();
+                    TolerateUnexpectedToken(_lookahead);
+                    NextToken();
 
-                            if (MatchKeyword("finally"))
-                            {
-                                expr = ParseSelfFinalizer();
-                            }
-                            else
-                            {
-                                expr = Finalize(node, new SelfExpression());
-                            }
-                        }
-                        else if (MatchKeyword("yield"))
-                        {
-                            expr = ParseYieldExpression();
-                        }
-                        else if (MatchKeyword("class") || MatchKeyword("module"))
-                        {
-                            expr = ParseClassExpression();
-                        }
-                        else if (MatchKeyword("new"))
-                        {
-                            expr = ParseNewExpression();
-                        }
-                        else if (MatchKeyword("import")) // ADHOC
-                        {
-                            var decl = ParseImportDeclaration();
-                            expr = Finalize(node, new ImportExpression(decl.Location) { Declaration = decl }); // Hack hack hack
-                        }
-                        else
-                        {
-                            TolerateUnexpectedToken(_lookahead);
-                            NextToken();
-
-                            return Finalize(node, new ErrorExpression());
-                        }
-                    }
+                    return Finalize(node, new ErrorExpression());
+                    
 
                     break;
                 default:
@@ -859,10 +805,7 @@ namespace Esprima
             Expect("]");
 
 #nullable disable
-            if (isMap)
-                return Finalize(node, new MapExpression(map));
-            else
-                return Finalize(node, new ArrayExpression(NodeList.From(ref arrElements)));
+            return Finalize(node, new ArrayExpression(NodeList.From(ref arrElements)));
 #nullable enable
         }
 
@@ -892,36 +835,6 @@ namespace Esprima
             _context.AllowStrictDirective = previousAllowStrictDirective;
 
             return body;
-        }
-
-        private FunctionExpression ParsePropertyMethodFunction(bool isGenerator)
-        {
-            var node = CreateNode();
-
-            var previousAllowYield = _context.AllowYield;
-            _context.AllowYield = true;
-            var parameters = ParseFormalParameters();
-            var method = ParsePropertyMethod(parameters, out var hasStrictDirective);
-            _context.AllowYield = previousAllowYield;
-
-            return Finalize(node, new FunctionExpression(null, NodeList.From(ref parameters.Parameters), method, isGenerator, hasStrictDirective, false));
-        }
-
-        private FunctionExpression ParsePropertyMethodAsyncFunction(bool isGenerator)
-        {
-            var node = CreateNode();
-
-            var previousAllowYield = _context.AllowYield;
-            var previousIsAsync = _context.IsAsync;
-            _context.AllowYield = false;
-            _context.IsAsync = true;
-
-            var parameters = ParseFormalParameters();
-            var method = ParsePropertyMethod(parameters, out var hasStrictDirective);
-            _context.AllowYield = previousAllowYield;
-            _context.IsAsync = previousIsAsync;
-
-            return Finalize(node, new FunctionExpression(null, NodeList.From(ref parameters.Parameters), method, isGenerator, hasStrictDirective, true));
         }
 
         private Expression ParseObjectPropertyKey(Boolean isPrivate = false)
@@ -1437,91 +1350,9 @@ namespace Esprima
             return Finalize(node, new Identifier((string?) id));
         }
 
-        private Expression ParseNewExpression()
-        {
-            var node = CreateNode();
-            var id = ParseIdentifierName();
-
-            // assert(id.name == 'new', 'New expression must start with `new`');
-
-            Expression expr;
-            if (Match("."))
-            {
-                NextToken();
-                if (_lookahead.Type == TokenType.Identifier && _context.InFunctionBody && "target".Equals(_lookahead.Value))
-                {
-                    var property = ParseIdentifierName();
-                    expr = new MetaProperty(id, property);
-                }
-                else
-                {
-                    TolerateUnexpectedToken(_lookahead);
-                    return Finalize(node, new ErrorExpression());
-                }
-            }
-            else if (MatchKeyword("import"))
-            {
-                TolerateUnexpectedToken(_lookahead);
-                return Finalize(node, new ErrorExpression());
-            }
-            else
-            {
-                var callee = IsolateCoverGrammar(parseLeftHandSideExpression);
-                var args = Match("(") ? ParseArguments() : new NodeList<Expression>();
-                expr = new NewExpression(callee, args);
-                _context.IsAssignmentTarget = false;
-                _context.IsBindingElement = false;
-            }
-
-            return Finalize(node, expr);
-        }
-
-        private Expression ParseAsyncArgument()
-        {
-            var arg = ParseAssignmentExpression();
-            _context.FirstCoverInitializedNameError = null;
-            return arg;
-        }
-
-        private NodeList<Expression> ParseAsyncArguments()
-        {
-            Expect("(");
-            var args = new ArrayList<Expression>();
-
-            if (!Match(")"))
-            {
-                while (true)
-                {
-                    if (IsEndOfFile())
-                    {
-                        TolerateUnexpectedToken(_lookahead);
-                        break;
-                    }
-
-                    var expr = Match("...") ? ParseSpreadElement() : IsolateCoverGrammar(ParseAsyncArgument);
-                    args.Add(expr);
-                    if (Match(")"))
-                    {
-                        break;
-                    }
-
-                    ExpectCommaSeparator();
-                    if (Match(")"))
-                    {
-                        break;
-                    }
-                }
-            }
-
-            Expect(")");
-
-            return NodeList.From(ref args);
-        }
-
         private Expression ParseLeftHandSideExpressionAllowCall()
         {
             var startToken = _lookahead;
-            var maybeAsync = MatchContextualKeyword("async");
 
             var previousAllowIn = _context.AllowIn;
             _context.AllowIn = true;
@@ -1545,7 +1376,7 @@ namespace Esprima
                 if (isTopLevelScopeResolution)
                     NextToken();
 
-                expr = MatchKeyword("new") ? InheritCoverGrammar(parseNewExpression) : InheritCoverGrammar(parsePrimaryExpression);
+                expr = InheritCoverGrammar(parsePrimaryExpression);
                 if (isTopLevelScopeResolution)
                 {
                     if (expr.Type == Nodes.Identifier)
@@ -1596,36 +1427,15 @@ namespace Esprima
 
                 if (Match("("))
                 {
-                    var asyncArrow = maybeAsync && startToken.LineNumber == _lookahead.LineNumber;
                     _context.IsBindingElement = false;
                     _context.IsAssignmentTarget = false;
-                    var args = asyncArrow ? ParseAsyncArguments() : ParseArguments();
+                    var args = ParseArguments();
                     if (expr.Type == Nodes.Import && args.Count != 1)
                     {
                         TolerateError(Messages.BadImportCallArity);
                     }
 
                     expr = Finalize(StartNode(startToken), new CallExpression(expr, args, optional));
-                    if (asyncArrow && Match("=>"))
-                    {
-                        var nodeArguments = new ArrayList<Expression>();
-                        for (var i = 0; i < args.Count; ++i)
-                        {
-                            nodeArguments.Add(ReinterpretExpressionAsPattern(args[i]));
-                        }
-
-                        expr = new ArrowParameterPlaceHolder(NodeList.From(ref nodeArguments), true);
-                    }
-                }
-                else if (Match(".*"))
-                {
-                    NextToken();
-
-                    _context.IsBindingElement = false;
-                    _context.IsAssignmentTarget = !optional;
-
-                    var property = IsolateCoverGrammar(parseLeftHandSideExpressionAllowCall);
-                    expr = Finalize(StartNode(startToken), new ObjectSelectorMemberExpression(expr, property, optional));
                 }
                 else if (Match("["))
                 {
@@ -1869,15 +1679,6 @@ namespace Esprima
             return expr;
         }
 
-        // https://tc39.github.io/ecma262/#sec-unary-operators
-        private Expression ParseAwaitExpression()
-        {
-            var node = CreateNode();
-            NextToken();
-            var argument = ParseExpression();
-            return Finalize(node, new AwaitExpression(argument));
-        }
-
         private Expression ParseUnaryExpression()
         {
             Expression expr;
@@ -1898,10 +1699,6 @@ namespace Esprima
                     _context.IsAssignmentTarget = false;
                     _context.IsBindingElement = false;
                 }
-            }
-            else if (_context.IsAsync && MatchContextualKeyword("await"))
-            {
-                expr = ParseAwaitExpression();
             }
             else
             {
@@ -2188,7 +1985,6 @@ namespace Esprima
         private ParsedParameters? ReinterpretAsCoverFormalsList(Expression expr)
         {
             ArrayList<Expression> parameters;
-            var asyncArrow = false;
 
             switch (expr.Type)
             {
@@ -2200,7 +1996,6 @@ namespace Esprima
                     var arrowParameterPlaceHolder = expr.As<ArrowParameterPlaceHolder>();
                     parameters = new ArrayList<Expression>(arrowParameterPlaceHolder.Params.Count);
                     parameters.AddRange(arrowParameterPlaceHolder.Params);
-                    asyncArrow = arrowParameterPlaceHolder.Async;
                     break;
                 default:
                     return null;
@@ -2214,20 +2009,6 @@ namespace Esprima
                 if (param.Type == Nodes.AssignmentPattern)
                 {
                     var assignment = param.As<AssignmentPattern>();
-                    if (assignment.Right.Type == Nodes.YieldExpression)
-                    {
-                        var yieldExpression = assignment.Right.As<YieldExpression>();
-                        if (yieldExpression.Argument != null)
-                        {
-                            TolerateUnexpectedToken(_lookahead);
-                        }
-
-                        assignment.Right = new Identifier("yield") { Location = assignment.Right.Location, Range = assignment.Right.Range };
-                    }
-                }
-                else if (asyncArrow && param.Type == Nodes.Identifier && param.As<Identifier>().Name == "await")
-                {
-                    TolerateUnexpectedToken(_lookahead);
                 }
 
                 CheckPatternParam(options, param);
@@ -2274,133 +2055,48 @@ namespace Esprima
                 TolerateUnexpectedToken(_lookahead, "Maximum statements depth reached");
             }
 
-            if (!_context.AllowYield && MatchKeyword("yield"))
-            {
-                expr = ParseYieldExpression();
-            }
-            else
-            {
-                var startToken = _lookahead;
-                var token = startToken;
-                expr = ParseConditionalExpression();
 
-                if (token.Type == TokenType.Identifier && token.LineNumber == _lookahead.LineNumber && (string?) token.Value == "async")
+            var startToken = _lookahead;
+            var token = startToken;
+            expr = ParseConditionalExpression();
+
+            if (MatchAssign())
+            {
+                if (!_context.IsAssignmentTarget)
                 {
-                    if (_lookahead.Type == TokenType.Identifier || MatchKeyword("yield"))
+                    TolerateError(Messages.InvalidLHSInAssignment);
+                }
+
+                if (_context.Strict && expr.Type == Nodes.Identifier)
+                {
+                    var id = expr.As<Identifier>();
+                    if (Scanner.IsRestrictedWord(id.Name))
                     {
-                        var arg = ParsePrimaryExpression();
-                        ReinterpretExpressionAsPattern(arg);
-                        var args = new[] { arg };
-                        expr = new ArrowParameterPlaceHolder(new NodeList<Expression>(args, 1), true);
+                        TolerateUnexpectedToken(token, Messages.StrictLHSAssignment);
+                    }
+
+                    if (Scanner.IsStrictModeReservedWord(id.Name))
+                    {
+                        TolerateUnexpectedToken(token, Messages.StrictReservedWord);
                     }
                 }
 
-                if (expr.Type == Nodes.ArrowParameterPlaceHolder || Match("=>"))
+                if (!Match("="))
                 {
-                    // https://tc39.github.io/ecma262/#sec-arrow-function-definitions
                     _context.IsAssignmentTarget = false;
                     _context.IsBindingElement = false;
-
-                    var isAsync = expr is ArrowParameterPlaceHolder arrow && arrow.Async;
-                    var list = ReinterpretAsCoverFormalsList(expr);
-
-                    if (list != null)
-                    {
-                        /* ADHOC: Not needed
-                        if (_hasLineTerminator)
-                        {
-                            TolerateUnexpectedToken(_lookahead);
-                        }
-                        */
-
-                        _context.FirstCoverInitializedNameError = null;
-
-                        var previousStrict = _context.Strict;
-                        var previousAllowStrictDirective = _context.AllowStrictDirective;
-                        _context.AllowStrictDirective = list.Simple;
-
-                        var previousAllowYield = _context.AllowYield;
-                        var previousIsAsync = _context.IsAsync;
-                        _context.AllowYield = true;
-                        _context.IsAsync = isAsync;
-
-                        var node = StartNode(startToken);
-                        Expect("=>");
-
-                        Node body;
-                        if (Match("{"))
-                        {
-                            var previousAllowIn = _context.AllowIn;
-                            _context.AllowIn = true;
-                            body = ParseFunctionSourceElements();
-                            _context.AllowIn = previousAllowIn;
-                        }
-                        else
-                        {
-                            body = IsolateCoverGrammar(parseAssignmentExpression);
-                        }
-
-                        var expression = body.Type != Nodes.BlockStatement;
-
-                        if (_context.Strict && list.FirstRestricted != null)
-                        {
-                            TolerateUnexpectedToken(list.FirstRestricted, list.Message);
-                        }
-
-                        if (_context.Strict && list.Stricted != null)
-                        {
-                            TolerateUnexpectedToken(list.Stricted, list.Message);
-                        }
-
-                        expr = Finalize(node, new ArrowFunctionExpression(NodeList.From(ref list.Parameters), body, expression, _context.Strict, isAsync));
-
-                        _context.Strict = previousStrict;
-                        _context.AllowStrictDirective = previousAllowStrictDirective;
-                        _context.AllowYield = previousAllowYield;
-                        _context.IsAsync = previousIsAsync;
-                    }
                 }
                 else
                 {
-                    if (MatchAssign())
-                    {
-                        if (!_context.IsAssignmentTarget)
-                        {
-                            TolerateError(Messages.InvalidLHSInAssignment);
-                        }
-
-                        if (_context.Strict && expr.Type == Nodes.Identifier)
-                        {
-                            var id = expr.As<Identifier>();
-                            if (Scanner.IsRestrictedWord(id.Name))
-                            {
-                                TolerateUnexpectedToken(token, Messages.StrictLHSAssignment);
-                            }
-
-                            if (Scanner.IsStrictModeReservedWord(id.Name))
-                            {
-                                TolerateUnexpectedToken(token, Messages.StrictReservedWord);
-                            }
-                        }
-
-                        if (!Match("="))
-                        {
-                            _context.IsAssignmentTarget = false;
-                            _context.IsBindingElement = false;
-                        }
-                        else
-                        {
-                            expr = ReinterpretExpressionAsPattern(expr);
-                        }
-
-                        token = NextToken();
-                        var right = IsolateCoverGrammar(parseAssignmentExpression);
-                        expr = Finalize(StartNode(startToken), new AssignmentExpression((string) token.Value!, expr, right));
-                        _context.FirstCoverInitializedNameError = null;
-                    }
+                    expr = ReinterpretExpressionAsPattern(expr);
                 }
-            }
 
+                token = NextToken();
+                var right = IsolateCoverGrammar(parseAssignmentExpression);
+                expr = Finalize(StartNode(startToken), new AssignmentExpression((string) token.Value!, expr, right));
+                _context.FirstCoverInitializedNameError = null;
+            }
+            
             _assignmentDepth--;
 
             return expr;
@@ -2450,21 +2146,10 @@ namespace Esprima
             {
                 switch ((string?) _lookahead.Value)
                 {
-                    case "import":
-                        statement = ParseImportDeclaration();
-                        break;
                     case "function":
-                    case "method":
                         statement = ParseSubroutineDeclaration();
                         break;
-                    case "module":
-                    case "class":
-                        statement = ParseClassOrModuleDeclaration();
-                        break;
-                    case "let":
-                        TolerateUnexpectedToken(_lookahead, "let is not supported in Adhoc.");
-                        statement = new ErrorStatement();
-                        break;
+
                     default:
                         statement = ParseStatement();
                         break;
@@ -2771,7 +2456,7 @@ namespace Esprima
                     }
                 }
             }
-            else if ((_context.IsModule || _context.IsAsync) && token.Type == TokenType.Identifier && (string?) token.Value == "await")
+            else if ((_context.IsModule) && token.Type == TokenType.Identifier && (string?) token.Value == "await")
             {
                 TolerateUnexpectedToken(token);
             }
@@ -2815,7 +2500,7 @@ namespace Esprima
                     }
                 }
             }
-            else if ((_context.IsModule || _context.IsAsync) && token.Type == TokenType.Identifier && (string?)token.Value == "await")
+            else if ((_context.IsModule) && token.Type == TokenType.Identifier && (string?)token.Value == "await")
             {
                 TolerateUnexpectedToken(token);
             }
@@ -3061,16 +2746,6 @@ namespace Esprima
 
             var forKeyword = _lookahead.Value;
             ExpectKeyword("for", "foreach");
-            if (MatchContextualKeyword("await"))
-            {
-                if (!_context.IsAsync)
-                {
-                    TolerateUnexpectedToken(_lookahead);
-                }
-
-                @await = true;
-                NextToken();
-            }
 
             Expect("(");
 
@@ -3460,12 +3135,7 @@ namespace Esprima
 
                 _context.LabelSet.Add(key);
                 Statement body;
-                if (MatchKeyword("class") || MatchKeyword("module"))
-                {
-                    TolerateUnexpectedToken(_lookahead);
-                    body = ParseClassOrModuleDeclaration();
-                }
-                else if (MatchKeyword("function"))
+                if (MatchKeyword("function"))
                 {
                     var token = _lookahead;
                     var declaration = ParseSubroutineDeclaration() as FunctionDeclaration;
@@ -3628,10 +3298,7 @@ namespace Esprima
                     break;
 
                 case TokenType.Identifier:
-                    if (MatchAsyncFunction())
-                        statement = ParseSubroutineDeclaration();
-                    else
-                        statement = ParseLabelledStatement();
+                    statement = ParseLabelledStatement();
                     break;
 
                 case TokenType.Keyword:
@@ -3654,9 +3321,6 @@ namespace Esprima
                         case "function":
                             statement = ParseSubroutineDeclaration();
                             break;
-                        case "finally": // Adhoc: Scope/module finalizer
-                            statement = ParseFinalizer();
-                            break;
                         case "if":
                             statement = ParseIfStatement();
                             break;
@@ -3665,9 +3329,6 @@ namespace Esprima
                             break;
                         case "switch":
                             statement = ParseSwitchStatement();
-                            break;
-                        case "undef":
-                            statement = ParseUndefStatement();
                             break;
                         case "throw":
                             statement = ParseThrowStatement();
@@ -3681,12 +3342,6 @@ namespace Esprima
                             break;
                         case "static": // ADHOC
                             statement = ParseStaticStatement();
-                            break;
-                        case "attribute": // ADHOC
-                            statement = ParseAttributeStatement();
-                            break;
-                        case "delegate": // ADHOC
-                            statement = ParseDelegateDeclaration();
                             break;
 
                         case "while":
@@ -3799,63 +3454,6 @@ namespace Esprima
             }
 
             options.ParamSetAdd(key);
-        }
-
-        // ADHOC: UNDEF 
-        private UndefStatement ParseUndefStatement()
-        {
-            var node = CreateNode();
-            ExpectKeyword("undef");
-
-            if (_hasLineTerminator)
-            {
-                TolerateError(Messages.NewlineAfterThrow);
-            }
-
-
-            Token token = NextToken();
-            if (token.Type != TokenType.Identifier)
-                TolerateError("Undef must be identifiers");
-
-            string str = token.Value as string;
-
-            while (Match("::"))
-            {
-                NextToken();
-                if (_lookahead.Type == TokenType.Identifier)
-                {
-                    token = NextToken();
-                    str += $"::{token.Value as string}";
-                }
-                else
-                {
-                    TolerateUnexpectedToken(_lookahead);
-                }
-            }
-
-            ConsumeSemicolon();
-
-            return Finalize(node, new UndefStatement(str));
-        }
-
-        // ADHOC: Object finalizer
-        private FinalizerStatement ParseFinalizer()
-        {
-            var node = CreateNode();
-            ExpectKeyword("finally");
-
-            var block = ParseBlock();
-            return Finalize(node, new FinalizerStatement(block));
-        }
-
-        // ADHOC: self object finalizer
-        private SelfFinalizerExpression ParseSelfFinalizer()
-        {
-            var node = CreateNode();
-            ExpectKeyword("finally");
-
-            var block = ParseBlock();
-            return Finalize(node, new SelfFinalizerExpression(block));
         }
 
         // ADHOC: Print Statement
@@ -3999,35 +3597,9 @@ namespace Esprima
             };
         }
 
-        private bool MatchAsyncFunction()
-        {
-            var match = MatchContextualKeyword("async");
-            if (match)
-            {
-                var state = _scanner.SaveState();
-                _scanner.ScanComments();
-                var next = _scanner.Lex();
-                _scanner.RestoreState(state);
-
-                match = state.LineNumber == next.LineNumber && next.Type == TokenType.Keyword && ((string?) next.Value == "function" || (string?) next.Value == "method");
-            }
-
-            return match;
-        }
-
         private Declaration ParseSubroutineDeclaration(bool identifierIsOptional = false)
         {
             var node = CreateNode();
-            var isAsync = MatchContextualKeyword("async");
-            if (isAsync)
-            {
-                if (_context.InIteration)
-                {
-                    TolerateError(Messages.AsyncFunctionInSingleStatementContext);
-                }
-
-                NextToken();
-            }
 
             bool isMethod = MatchKeyword("method");
             if (!MatchKeyword("function") && !isMethod)
@@ -4070,9 +3642,7 @@ namespace Esprima
                 }
             }
 
-            var previousIsAsync = _context.IsAsync;
             var previousAllowYield = _context.AllowYield;
-            _context.IsAsync = isAsync;
             _context.AllowYield = !isGenerator;
 
             var formalParameters = ParseFormalParameters(firstRestricted);
@@ -4101,191 +3671,9 @@ namespace Esprima
             var hasStrictDirective = _context.Strict;
             _context.AllowStrictDirective = previousAllowStrictDirective;
             _context.Strict = previousStrict;
-            _context.IsAsync = previousIsAsync;
             _context.AllowYield = previousAllowYield;
 
-            if (!isMethod)
-                return Finalize(node, new FunctionDeclaration(id, parameters, body, isGenerator, hasStrictDirective, isAsync));
-            else
-                return Finalize(node, new MethodDeclaration(id, parameters, body, isGenerator, hasStrictDirective, isAsync));
-        }
-
- 
-
-        private FunctionExpression ParseFunctionExpression()
-        {
-            var node = CreateNode();
-
-            var isAsync = MatchContextualKeyword("async");
-            if (isAsync)
-            {
-                NextToken();
-            }
-
-            ExpectKeyword("function");
-
-            var isGenerator = Match("*");
-            if (isGenerator)
-            {
-                NextToken();
-            }
-
-            string? message = null;
-            Expression? id = null;
-            Token? firstRestricted = null;
-
-            var previousIsAsync = _context.IsAsync;
-            var previousAllowYield = _context.AllowYield;
-            _context.IsAsync = isAsync;
-            _context.AllowYield = !isGenerator;
-
-            if (!Match("("))
-            {
-                var token = _lookahead;
-                id = !_context.Strict && !isGenerator && MatchKeyword("yield")
-                    ? ParseIdentifierName()
-                    : ParseVariableIdentifier();
-
-                if (_context.Strict)
-                {
-                    if (Scanner.IsRestrictedWord((string?) token.Value))
-                    {
-                        TolerateUnexpectedToken(token, Messages.StrictFunctionName);
-                    }
-                }
-                else
-                {
-                    if (Scanner.IsRestrictedWord((string?) token.Value))
-                    {
-                        firstRestricted = token;
-                        message = Messages.StrictFunctionName;
-                    }
-                    else if (Scanner.IsStrictModeReservedWord((string?) token.Value))
-                    {
-                        firstRestricted = token;
-                        message = Messages.StrictReservedWord;
-                    }
-                }
-            }
-
-            var formalParameters = ParseFormalParameters(firstRestricted);
-            var parameters = NodeList.From(ref formalParameters.Parameters);
-            var stricted = formalParameters.Stricted;
-            firstRestricted = formalParameters.FirstRestricted;
-            if (formalParameters.Message != null)
-            {
-                message = formalParameters.Message;
-            }
-
-            var previousStrict = _context.Strict;
-            var previousAllowStrictDirective = _context.AllowStrictDirective;
-            _context.AllowStrictDirective = formalParameters.Simple;
-            var body = ParseFunctionSourceElements();
-            if (_context.Strict && firstRestricted != null)
-            {
-                TolerateUnexpectedToken(firstRestricted, message);
-            }
-
-            if (_context.Strict && stricted != null)
-            {
-                TolerateUnexpectedToken(stricted, message);
-            }
-
-            var hasStrictDirective = _context.Strict;
-            _context.Strict = previousStrict;
-            _context.AllowStrictDirective = previousAllowStrictDirective;
-            _context.IsAsync = previousIsAsync;
-            _context.AllowYield = previousAllowYield;
-
-            return Finalize(node, new FunctionExpression((Identifier?) id, parameters, body, isGenerator, hasStrictDirective, isAsync));
-        }
-
-        private MethodExpression ParseMethodExpression()
-        {
-            var node = CreateNode();
-
-            var isAsync = MatchContextualKeyword("async");
-            if (isAsync)
-            {
-                NextToken();
-            }
-
-            ExpectKeyword("method");
-
-            var isGenerator = Match("*");
-            if (isGenerator)
-            {
-                NextToken();
-            }
-
-            string? message = null;
-            Expression? id = null;
-            Token? firstRestricted = null;
-
-            var previousIsAsync = _context.IsAsync;
-            var previousAllowYield = _context.AllowYield;
-            _context.IsAsync = isAsync;
-            _context.AllowYield = !isGenerator;
-
-            if (!Match("("))
-            {
-                var token = _lookahead;
-                id = !_context.Strict && !isGenerator && MatchKeyword("yield")
-                    ? ParseIdentifierName()
-                    : ParseVariableIdentifier();
-
-                if (_context.Strict)
-                {
-                    if (Scanner.IsRestrictedWord((string?) token.Value))
-                    {
-                        TolerateUnexpectedToken(token, Messages.StrictFunctionName);
-                    }
-                }
-                else
-                {
-                    if (Scanner.IsRestrictedWord((string?) token.Value))
-                    {
-                        firstRestricted = token;
-                        message = Messages.StrictFunctionName;
-                    }
-                    else if (Scanner.IsStrictModeReservedWord((string?) token.Value))
-                    {
-                        firstRestricted = token;
-                        message = Messages.StrictReservedWord;
-                    }
-                }
-            }
-
-            var formalParameters = ParseFormalParameters(firstRestricted);
-            var parameters = NodeList.From(ref formalParameters.Parameters);
-            var stricted = formalParameters.Stricted;
-            firstRestricted = formalParameters.FirstRestricted;
-            if (formalParameters.Message != null)
-            {
-                message = formalParameters.Message;
-            }
-
-            var previousStrict = _context.Strict;
-            var previousAllowStrictDirective = _context.AllowStrictDirective;
-            _context.AllowStrictDirective = formalParameters.Simple;
-            var body = ParseFunctionSourceElements();
-            if (_context.Strict && firstRestricted != null)
-            {
-                TolerateUnexpectedToken(firstRestricted, message);
-            }
-
-            if (_context.Strict && stricted != null)
-            {
-                TolerateUnexpectedToken(stricted, message);
-            }
-
-            var hasStrictDirective = _context.Strict;
-            _context.Strict = previousStrict;
-            _context.AllowStrictDirective = previousAllowStrictDirective;
-            _context.IsAsync = previousIsAsync;
-            _context.AllowYield = previousAllowYield;
-
-            return Finalize(node, new MethodExpression((Identifier?) id, parameters, body, isGenerator, hasStrictDirective, isAsync));
+            return Finalize(node, new FunctionDeclaration(id, parameters, body, isGenerator, hasStrictDirective));
         }
 
         // https://tc39.github.io/ecma262/#sec-directive-prologues-and-the-use-strict-directive
@@ -4377,64 +3765,6 @@ namespace Esprima
             };
         }
 
-        private FunctionExpression ParseGetterMethod()
-        {
-            var node = CreateNode();
-
-            const bool isGenerator = false;
-            var previousAllowYield = _context.AllowYield;
-            _context.AllowYield = !isGenerator;
-            var formalParameters = ParseFormalParameters();
-            if (formalParameters.Parameters.Count > 0)
-            {
-                TolerateError(Messages.BadGetterArity);
-            }
-
-            var method = ParsePropertyMethod(formalParameters, out var hasStrictDirective);
-            _context.AllowYield = previousAllowYield;
-
-            return Finalize(node, new FunctionExpression(null, NodeList.From(ref formalParameters.Parameters), method, isGenerator, hasStrictDirective, false));
-        }
-
-        private FunctionExpression ParseSetterMethod()
-        {
-            var node = CreateNode();
-
-            const bool isGenerator = false;
-            var previousAllowYield = _context.AllowYield;
-            _context.AllowYield = !isGenerator;
-
-            var formalParameters = ParseFormalParameters();
-            if (formalParameters.Parameters.Count != 1)
-            {
-                TolerateError(Messages.BadSetterArity);
-            }
-            else if (formalParameters.Parameters[0] is RestElement)
-            {
-                TolerateError(Messages.BadSetterRestParameter);
-            }
-
-            var method = ParsePropertyMethod(formalParameters, out var hasStrictDirective);
-            _context.AllowYield = previousAllowYield;
-
-            return Finalize(node, new FunctionExpression(null, NodeList.From(ref formalParameters.Parameters), method, isGenerator, hasStrictDirective, false));
-        }
-
-        private FunctionExpression ParseGeneratorMethod(bool isAsync = false)
-        {
-            var node = CreateNode();
-
-            var previousAllowYield = _context.AllowYield;
-
-            _context.AllowYield = true;
-            var parameters = ParseFormalParameters();
-            _context.AllowYield = false;
-            var method = ParsePropertyMethod(parameters, out var hasStrictDirective);
-            _context.AllowYield = previousAllowYield;
-
-            return Finalize(node, new FunctionExpression(null, NodeList.From(ref parameters.Parameters), method, true, hasStrictDirective, isAsync));
-        }
-
         // https://tc39.github.io/ecma262/#sec-generator-function-definitions
 
         private static readonly HashSet<string> PunctuatorExpressionStart = new()
@@ -4489,194 +3819,6 @@ namespace Esprima
             }
 
             return start;
-        }
-
-        private YieldExpression ParseYieldExpression()
-        {
-            var node = CreateNode();
-            ExpectKeyword("yield");
-
-            Expression? argument = null;
-            var delegat = false;
-            if (!_hasLineTerminator)
-            {
-                var previousAllowYield = _context.AllowYield;
-                _context.AllowYield = false;
-                delegat = Match("*");
-                if (delegat)
-                {
-                    NextToken();
-                    argument = ParseAssignmentExpression();
-                }
-                else if (IsStartOfExpression())
-                {
-                    argument = ParseAssignmentExpression();
-                }
-
-                _context.AllowYield = previousAllowYield;
-            }
-
-            return Finalize(node, new YieldExpression(argument, delegat));
-        }
-
-        private Statement ParseClassOrModuleDeclaration(bool identifierIsOptional = false)
-        {
-            var node = CreateNode();
-
-            var previousStrict = _context.Strict;
-            var previousAllowSuper = _context.AllowSuper;
-            _context.Strict = true;
-
-            bool isModule = _lookahead.Value as string == "module";
-            ExpectKeyword("class", "module");
-
-            // ADHOC: Module Constructor
-            if (Match("("))
-            {
-                NextToken();
-                var expr = IsolateCoverGrammar(parseExpression);
-                Expect(")");
-
-                var classBody = ParseBlock();
-                _context.Strict = previousStrict;
-
-                return Finalize(node, new ModuleConstructorStatement(expr, classBody));
-            }
-            else
-            {
-                // Regular class or module declaration
-                var id = identifierIsOptional && _lookahead.Type != TokenType.Identifier
-                    ? null
-                    : ParseVariableIdentifierAllowStatic();
-
-                Expression? superClass = null;
-
-                // ADHOC: ':' instead of extends
-                if (Match(":"))
-                {
-                    NextToken();
-                    superClass = IsolateCoverGrammar(ParseStaticIdentifierName);
-                    _context.AllowSuper = true;
-                }
-
-                var classBody = ParseBlock();
-                _context.Strict = previousStrict;
-                _context.AllowSuper = previousAllowSuper;
-
-                return Finalize(node, new ClassDeclaration(id, superClass, classBody) { IsModule = isModule });
-            }
-        }
-
-        private ClassExpression ParseClassExpression()
-        {
-            var node = CreateNode();
-
-            var previousStrict = _context.Strict;
-            _context.Strict = true;
-
-            bool isModule = _lookahead.Value as string == "module";
-            ExpectKeyword("class", "module");
-            var id = _lookahead.Type == TokenType.Identifier
-                ? ParseVariableIdentifierAllowStatic()
-                : null;
-
-            Expression? superClass = null;
-            if (Match(":"))
-            {
-                NextToken();
-                superClass = IsolateCoverGrammar(ParseLeftHandSideExpressionAllowCall);
-            }
-
-            var classBody = ParseBlock();
-            _context.Strict = previousStrict;
-
-            return Finalize(node, new ClassExpression(id, superClass, classBody) {  IsModule = isModule });
-        }
-
-        // import <foo> ...;
-        private ImportDefaultSpecifier ParseImportSpecifier()
-        {
-            var node = CreateNode();
-            var local = ParseIdentifierName();
-            return Finalize(node, new ImportDefaultSpecifier(local));
-        }
-
-        // import *;
-        private Identifier ParseImportAll()
-        {
-            var node = CreateNode();
-
-            Expect("*");
-            NextToken();
-
-            return Finalize(node, new Identifier("*"));
-        }
-
-        private ImportDeclaration ParseImportDeclaration()
-        {
-            var node = CreateNode();
-            ExpectKeyword("import");
-
-            var namespacePath = new ArrayList<ImportDeclarationSpecifier>();
-
-            Identifier target = null;
-            if (IsIdentifierName(_lookahead))
-            {
-                ImportDefaultSpecifier mainNamespace = ParseImportSpecifier();
-                namespacePath.Push(mainNamespace);
-
-                // import foo
-                while (Match("::") || Match("*"))
-                {
-                    bool isStaticPathAccess = Match("::");
-
-                    if (isStaticPathAccess)
-                    {
-                        NextToken();
-                        if (Match("*"))
-                        {
-                            target = ParseImportAll();
-                            break;
-                        }
-                        else if (_lookahead.Type == TokenType.Identifier)
-                        {
-                            namespacePath.Push(ParseImportSpecifier());
-                            continue;
-                        }
-                        else
-                            TolerateUnexpectedToken(_lookahead);
-                    }
-                    else if (Match("*"))
-                    {
-                        target = ParseImportAll();
-                        break;
-                    }
-
-                    NextToken();
-                }
-            }
-            else
-            {
-                TolerateUnexpectedToken(NextToken());
-            }
-
-            if (target is null && namespacePath.Count >= 2)
-                target = namespacePath.Pop().Local;
-            
-            ConsumeSemicolon();
-
-            return Finalize(node, new ImportDeclaration(NodeList.From(ref namespacePath), target));
-        }
-
-        private DelegateDeclaration ParseDelegateDeclaration()
-        {
-            var node = CreateNode();
-            ExpectKeyword("delegate");
-
-            var identifier = ParseIdentifierName();
-            ConsumeSemicolon();
-
-            return Finalize(node, new DelegateDeclaration(identifier, VariableDeclarationKind.Delegate));
         }
 
         public void SetFileName(string fileName)

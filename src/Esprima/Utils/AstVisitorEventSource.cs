@@ -49,20 +49,14 @@ namespace Esprima.Utils
         public event EventHandler<ForStatement>? VisitedForStatement;
         public event EventHandler<DoWhileStatement>? VisitingDoWhileStatement;
         public event EventHandler<DoWhileStatement>? VisitedDoWhileStatement;
-        public event EventHandler<ArrowFunctionExpression>? VisitingArrowFunctionExpression;
-        public event EventHandler<ArrowFunctionExpression>? VisitedArrowFunctionExpression;
         public event EventHandler<UnaryExpression>? VisitingUnaryExpression;
         public event EventHandler<UnaryExpression>? VisitedUnaryExpression;
         public event EventHandler<UpdateExpression>? VisitingUpdateExpression;
         public event EventHandler<UpdateExpression>? VisitedUpdateExpression;
-        public event EventHandler<SelfExpression>? VisitingThisExpression;
-        public event EventHandler<SelfExpression>? VisitedThisExpression;
         public event EventHandler<SequenceExpression>? VisitingSequenceExpression;
         public event EventHandler<SequenceExpression>? VisitedSequenceExpression;
         public event EventHandler<ObjectExpression>? VisitingObjectExpression;
         public event EventHandler<ObjectExpression>? VisitedObjectExpression;
-        public event EventHandler<NewExpression>? VisitingNewExpression;
-        public event EventHandler<NewExpression>? VisitedNewExpression;
         public event EventHandler<MemberExpression>? VisitingMemberExpression;
         public event EventHandler<MemberExpression>? VisitedMemberExpression;
         public event EventHandler<BinaryExpression>? VisitingLogicalExpression;
@@ -75,24 +69,8 @@ namespace Esprima.Utils
         public event EventHandler<IFunction>? VisitedFunctionExpression;
         public event EventHandler<ChainExpression>? VisitingChainExpression;
         public event EventHandler<ChainExpression>? VisitedChainExpression;
-        public event EventHandler<ClassExpression>? VisitingClassExpression;
-        public event EventHandler<ClassExpression>? VisitedClassExpression;
-        public event EventHandler<Import>? VisitingImport;
-        public event EventHandler<Import>? VisitedImport;
-        public event EventHandler<ImportDeclaration>? VisitingImportDeclaration;
-        public event EventHandler<ImportDeclaration>? VisitedImportDeclaration;
-        public event EventHandler<ImportNamespaceSpecifier>? VisitingImportNamespaceSpecifier;
-        public event EventHandler<ImportNamespaceSpecifier>? VisitedImportNamespaceSpecifier;
-        public event EventHandler<ImportDefaultSpecifier>? VisitingImportDefaultSpecifier;
-        public event EventHandler<ImportDefaultSpecifier>? VisitedImportDefaultSpecifier;
-        public event EventHandler<ImportSpecifier>? VisitingImportSpecifier;
-        public event EventHandler<ImportSpecifier>? VisitedImportSpecifier;
         public event EventHandler<ForeachStatement>? VisitingForOfStatement;
         public event EventHandler<ForeachStatement>? VisitedForOfStatement;
-        public event EventHandler<ClassDeclaration>? VisitingClassDeclaration;
-        public event EventHandler<ClassDeclaration>? VisitedClassDeclaration;
-        public event EventHandler<YieldExpression>? VisitingYieldExpression;
-        public event EventHandler<YieldExpression>? VisitedYieldExpression;
         public event EventHandler<TaggedTemplateExpression>? VisitingTaggedTemplateExpression;
         public event EventHandler<TaggedTemplateExpression>? VisitedTaggedTemplateExpression;
         public event EventHandler<Super>? VisitingSuper;
@@ -273,12 +251,6 @@ namespace Esprima.Utils
             VisitedDoWhileStatement?.Invoke(this, doWhileStatement);
         }
 
-        protected internal override void VisitArrowFunctionExpression(ArrowFunctionExpression arrowFunctionExpression)
-        {
-            VisitingArrowFunctionExpression?.Invoke(this, arrowFunctionExpression);
-            base.VisitArrowFunctionExpression(arrowFunctionExpression);
-            VisitedArrowFunctionExpression?.Invoke(this, arrowFunctionExpression);
-        }
 
         protected internal override void VisitUnaryExpression(UnaryExpression unaryExpression)
         {
@@ -294,13 +266,6 @@ namespace Esprima.Utils
             VisitedUpdateExpression?.Invoke(this, updateExpression);
         }
 
-        protected internal override void VisitSelfExpression(SelfExpression thisExpression)
-        {
-            VisitingThisExpression?.Invoke(this, thisExpression);
-            base.VisitSelfExpression(thisExpression);
-            VisitedThisExpression?.Invoke(this, thisExpression);
-        }
-
         protected internal override void VisitSequenceExpression(SequenceExpression sequenceExpression)
         {
             VisitingSequenceExpression?.Invoke(this, sequenceExpression);
@@ -313,13 +278,6 @@ namespace Esprima.Utils
             VisitingObjectExpression?.Invoke(this, objectExpression);
             base.VisitObjectExpression(objectExpression);
             VisitedObjectExpression?.Invoke(this, objectExpression);
-        }
-
-        protected internal override void VisitNewExpression(NewExpression newExpression)
-        {
-            VisitingNewExpression?.Invoke(this, newExpression);
-            base.VisitNewExpression(newExpression);
-            VisitedNewExpression?.Invoke(this, newExpression);
         }
 
         protected internal override void VisitMemberExpression(MemberExpression memberExpression)
@@ -364,67 +322,11 @@ namespace Esprima.Utils
             VisitedChainExpression?.Invoke(this, chainExpression);
         }
 
-        protected internal override void VisitClassExpression(ClassExpression classExpression)
-        {
-            VisitingClassExpression?.Invoke(this, classExpression);
-            base.VisitClassExpression(classExpression);
-            VisitedClassExpression?.Invoke(this, classExpression);
-        }
-
-        protected internal override void VisitImport(Import import)
-        {
-            VisitingImport?.Invoke(this, import);
-            base.VisitImport(import);
-            VisitedImport?.Invoke(this, import);
-        }
-
-        protected internal override void VisitImportDeclaration(ImportDeclaration importDeclaration)
-        {
-            VisitingImportDeclaration?.Invoke(this, importDeclaration);
-            base.VisitImportDeclaration(importDeclaration);
-            VisitedImportDeclaration?.Invoke(this, importDeclaration);
-        }
-
-        protected internal override void VisitImportNamespaceSpecifier(ImportNamespaceSpecifier importNamespaceSpecifier)
-        {
-            VisitingImportNamespaceSpecifier?.Invoke(this, importNamespaceSpecifier);
-            base.VisitImportNamespaceSpecifier(importNamespaceSpecifier);
-            VisitedImportNamespaceSpecifier?.Invoke(this, importNamespaceSpecifier);
-        }
-
-        protected internal override void VisitImportDefaultSpecifier(ImportDefaultSpecifier importDefaultSpecifier)
-        {
-            VisitingImportDefaultSpecifier?.Invoke(this, importDefaultSpecifier);
-            base.VisitImportDefaultSpecifier(importDefaultSpecifier);
-            VisitedImportDefaultSpecifier?.Invoke(this, importDefaultSpecifier);
-        }
-
-        protected internal override void VisitImportSpecifier(ImportSpecifier importSpecifier)
-        {
-            VisitingImportSpecifier?.Invoke(this, importSpecifier);
-            base.VisitImportSpecifier(importSpecifier);
-            VisitedImportSpecifier?.Invoke(this, importSpecifier);
-        }
-
         protected internal override void VisitForOfStatement(ForeachStatement forOfStatement)
         {
             VisitingForOfStatement?.Invoke(this, forOfStatement);
             base.VisitForOfStatement(forOfStatement);
             VisitedForOfStatement?.Invoke(this, forOfStatement);
-        }
-
-        protected internal override void VisitClassDeclaration(ClassDeclaration classDeclaration)
-        {
-            VisitingClassDeclaration?.Invoke(this, classDeclaration);
-            base.VisitClassDeclaration(classDeclaration);
-            VisitedClassDeclaration?.Invoke(this, classDeclaration);
-        }
-
-        protected internal override void VisitYieldExpression(YieldExpression yieldExpression)
-        {
-            VisitingYieldExpression?.Invoke(this, yieldExpression);
-            base.VisitYieldExpression(yieldExpression);
-            VisitedYieldExpression?.Invoke(this, yieldExpression);
         }
 
         protected internal override void VisitTaggedTemplateExpression(TaggedTemplateExpression taggedTemplateExpression)

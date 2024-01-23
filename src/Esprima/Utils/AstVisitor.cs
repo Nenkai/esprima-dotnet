@@ -178,17 +178,6 @@ namespace Esprima.Utils
             Visit(doWhileStatement.Test);
         }
 
-        protected internal virtual void VisitArrowFunctionExpression(ArrowFunctionExpression arrowFunctionExpression)
-        {
-            ref readonly var parameters = ref arrowFunctionExpression.Params;
-            for (var i = 0; i < parameters.Count; i++)
-            {
-                Visit(parameters[i]);
-            }
-
-            Visit(arrowFunctionExpression.Body);
-        }
-
         protected internal virtual void VisitUnaryExpression(UnaryExpression unaryExpression)
         {
             Visit(unaryExpression.Argument);
@@ -197,10 +186,6 @@ namespace Esprima.Utils
         protected internal virtual void VisitUpdateExpression(UpdateExpression updateExpression)
         {
             Visit(updateExpression.Argument);
-        }
-
-        protected internal virtual void VisitSelfExpression(SelfExpression thisExpression)
-        {
         }
 
         protected internal virtual void VisitSequenceExpression(SequenceExpression sequenceExpression)
@@ -218,16 +203,6 @@ namespace Esprima.Utils
             for (var i = 0; i < properties.Count; i++)
             {
                 Visit(properties[i]);
-            }
-        }
-
-        protected internal virtual void VisitNewExpression(NewExpression newExpression)
-        {
-            Visit(newExpression.Callee);
-            ref readonly var arguments = ref newExpression.Arguments;
-            for (var i = 0; i < arguments.Count; i++)
-            {
-                Visit(arguments[i]);
             }
         }
 
@@ -277,84 +252,13 @@ namespace Esprima.Utils
             Visit(chainExpression.Expression);
         }
 
-        protected internal virtual void VisitClassExpression(ClassExpression classExpression)
-        {
-            if (classExpression.Id is not null)
-            {
-                Visit(classExpression.Id);
-            }
 
-            if (classExpression.SuperClass is not null)
-            {
-                Visit(classExpression.SuperClass);
-            }
-
-            Visit(classExpression.Body);
-        }
-
-        protected internal virtual void VisitImport(Import import)
-        {
-            if (import.Source != null)
-            {
-                Visit(import.Source);
-            }
-        }
-
-        protected internal virtual void VisitImportDeclaration(ImportDeclaration importDeclaration)
-        {
-            ref readonly var specifiers = ref importDeclaration.Specifiers;
-            for (var i = 0; i < specifiers.Count; i++)
-            {
-                Visit(specifiers[i]);
-            }
-
-            Visit(importDeclaration.Target);
-        }
-
-        protected internal virtual void VisitImportNamespaceSpecifier(ImportNamespaceSpecifier importNamespaceSpecifier)
-        {
-            Visit(importNamespaceSpecifier.Local);
-        }
-
-        protected internal virtual void VisitImportDefaultSpecifier(ImportDefaultSpecifier importDefaultSpecifier)
-        {
-            Visit(importDefaultSpecifier.Local);
-        }
-
-        protected internal virtual void VisitImportSpecifier(ImportSpecifier importSpecifier)
-        {
-            Visit(importSpecifier.Imported);
-            Visit(importSpecifier.Local);
-        }
 
         protected internal virtual void VisitForOfStatement(ForeachStatement forOfStatement)
         {
             Visit(forOfStatement.Left);
             Visit(forOfStatement.Right);
             Visit(forOfStatement.Body);
-        }
-
-        protected internal virtual void VisitClassDeclaration(ClassDeclaration classDeclaration)
-        {
-            if (classDeclaration.Id is not null)
-            {
-                Visit(classDeclaration.Id);
-            }
-
-            if (classDeclaration.SuperClass is not null)
-            {
-                Visit(classDeclaration.SuperClass);
-            }
-
-            Visit(classDeclaration.Body);
-        }
-
-        protected internal virtual void VisitYieldExpression(YieldExpression yieldExpression)
-        {
-            if (yieldExpression.Argument is not null)
-            {
-                Visit(yieldExpression.Argument);
-            }
         }
 
         protected internal virtual void VisitTaggedTemplateExpression(TaggedTemplateExpression taggedTemplateExpression)
@@ -443,11 +347,6 @@ namespace Esprima.Utils
         protected internal virtual void VisitRestElement(RestElement restElement)
         {
             Visit(restElement.Argument);
-        }
-
-        protected internal virtual void VisitAwaitExpression(AwaitExpression awaitExpression)
-        {
-            Visit(awaitExpression.Argument);
         }
 
         protected internal virtual void VisitConditionalExpression(ConditionalExpression conditionalExpression)
