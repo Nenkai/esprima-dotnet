@@ -2642,7 +2642,7 @@ namespace Esprima
             var node = CreateNode();
 
             var forKeyword = _lookahead.Value;
-            ExpectKeyword("for", "foreach");
+            ExpectKeyword("for");
 
             Expect("(");
 
@@ -2652,7 +2652,7 @@ namespace Esprima
             }
             else
             {
-                if (MatchKeyword("var"))
+                if (MatchKeyword("int"))
                 {
                     var initNode = CreateNode();
                     NextToken();
