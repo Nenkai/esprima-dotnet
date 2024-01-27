@@ -5,7 +5,7 @@ namespace Esprima
     /// <summary>
     /// Default error handling logic for Esprima.
     /// </summary>
-    public class AdhocErrorHandler : IErrorHandler
+    public class ScriptErrorHandler : IErrorHandler
     {
         public string? Source { get; set; }
         public bool Tolerant { get; set; }

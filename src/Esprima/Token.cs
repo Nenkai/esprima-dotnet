@@ -22,11 +22,7 @@ namespace Esprima
     {
         None,
         Integer,
-        UnsignedInteger,
-        Long,
-        UnsignedLong,
         Float,
-        Double,
     }
 
     public class Token

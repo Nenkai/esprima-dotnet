@@ -6,6 +6,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using Esprima.Ast;
+using static Esprima.Utils.AstJson;
 
 namespace Esprima
 {
@@ -52,61 +53,36 @@ namespace Esprima
         {
             "if",
             "do",
-            "var",
             "for",
-            "foreach", // ADHOC
-            //"in" // ADHOC but only contextual
             "static", // ADHOC
-            "attribute", // ADHOC
             "new",
             "try",
-            "let", // ADHOC: NOT SUPPORTED
-            "self", // ADHOC: Changed from "this"
             "else", 
             "case",
             "void",
-            "with", // ADHOC: NOT SUPPORTED
-            //"enum", // ADHOC: NOT SUPPORTED
             "while",
             "break",
             "catch",
             "throw",
             "const",
             "yield",
-            "class",
-            "module", // ADHOC
-            "super",
             "return",
             "typeof",
-            //"delete",
             "switch",
-            //"export", ADHOC: NOT SUPPORTED
-            "import",
             "default",
             "finally",
-            //"extends", ADHOC NOT SUPPORTED, uses ':' instead
             "function",
-            "method", // ADHOC
             "continue",
-            "debugger",
-            "instanceof",
-            "undef", // ADHOC
-            "print", // ADHOC (GT4 etc)
-            "delegate", // ADHOC (>= GTS)
-            "require", // ADHOC
+
+            "int",
+            "fixed",
+            "string",
+            "array",
         };
 
         private static readonly HashSet<string> StrictModeReservedWords = new()
         {
-            "implements",
-            "interface",
-            "package",
-            "private",
-            "protected",
-            "public",
             "static",
-            "yield",
-            "let" // ADHOC: NOT SUPPORTED
         };
 
         private static readonly HashSet<string> FutureReservedWords = new() { "enum", "super" };
@@ -954,28 +930,8 @@ namespace Esprima
             object value = 0;
             NumericTokenType tokenType = NumericTokenType.None;
 
-            if (Source.CharCodeAt(Index) == 'u' || Source.CharCodeAt(Index) == 'U') // Unsigned
-            {
-                Index++;
-                if (Source.CharCodeAt(Index) == 'l' || Source.CharCodeAt(Index) == 'L') // Unsigned Long
-                {
-                    Index++;
-                    value = Convert.ToUInt64(number, 16);
-                    tokenType = NumericTokenType.UnsignedLong;
-                }
-                else // UInt
-                {
-                    value = Convert.ToUInt32(number, 16);
-                    tokenType = NumericTokenType.UnsignedInteger;
-                }
-            } 
-            else if (Source.CharCodeAt(Index) == 'l' || Source.CharCodeAt(Index) == 'L') // Long
-            {
-                Index++;
-                value = Convert.ToInt64(number, 16);
-                tokenType = NumericTokenType.Long;
-            }
-            else if (Character.IsIdentifierStart(Source.CharCodeAt(Index)))
+
+            if (Character.IsIdentifierStart(Source.CharCodeAt(Index)))
             {
                 TolerateUnexpectedToken();
             }
@@ -984,41 +940,9 @@ namespace Esprima
                 value = Convert.ToInt32(number, 16);
                 tokenType = NumericTokenType.Integer;
             }
-            else if (number.Length <= 16)
-            {
-                value = Convert.ToInt64(number, 16);
-                tokenType = NumericTokenType.Long;
-            }
-            else if (number.Length > 255)
-            {
-                value = double.PositiveInfinity;
-                tokenType = NumericTokenType.Double;
-            }
             else
             {
-                double tmpVal = 0;
-
-                double modulo = 1;
-                var literal = number.ToLowerInvariant();
-                var length = literal.Length - 1;
-                for (var i = length; i >= 0; i--)
-                {
-                    var c = literal[i];
-
-                    if (c <= '9')
-                    {
-                        tmpVal += modulo * (c - '0');
-                    }
-                    else
-                    {
-                        tmpVal += modulo * (c - 'a' + 10);
-                    }
-
-                    modulo *= 16;
-                }
-
-                value = tmpVal;
-                tokenType = NumericTokenType.Double;
+                TolerateUnexpectedToken();
             }
 
             return new Token
@@ -1266,59 +1190,6 @@ namespace Esprima
                     TolerateUnexpectedToken();
                 }
             }
-            else if (ch == 'u' || ch == 'U') // Unsigned
-            {
-                Index++;
-
-                if (Source[Index] == 'l' || Source[Index] == 'L') // Unsigned long
-                {
-                    Index++;
-                    ulong ulongValue = ulong.Parse(sb.ToString());
-                    return new Token
-                    {
-                        Type = TokenType.NumericLiteral,
-                        NumericTokenType = NumericTokenType.UnsignedLong,
-                        Value = ulongValue,
-                        NumericValue = ulongValue,
-                        LineNumber = LineNumber,
-                        LineStart = LineStart,
-                        Start = start,
-                        End = Index
-                    };
-                }
-                else // Unsigned int
-                {
-                    var uintValue = uint.Parse(sb.ToString());
-                    return new Token
-                    {
-                        Type = TokenType.NumericLiteral,
-                        NumericTokenType = NumericTokenType.UnsignedInteger,
-                        Value = uintValue,
-                        NumericValue = uintValue,
-                        LineNumber = LineNumber,
-                        LineStart = LineStart,
-                        Start = start,
-                        End = Index
-                    };
-                }
-            }
-            else if (ch == 'l' || ch == 'L') // Long
-            {
-                Index++;
-
-                long longValue = long.Parse(sb.ToString());
-                return new Token
-                {
-                    Type = TokenType.NumericLiteral,
-                    NumericTokenType = NumericTokenType.Long,
-                    Value = longValue,
-                    NumericValue = longValue,
-                    LineNumber = LineNumber,
-                    LineStart = LineStart,
-                    Start = start,
-                    End = Index
-                };
-            }
             else if (ch == 'f' || ch == 'F') // Float
             {
                 Index++;
@@ -1333,29 +1204,6 @@ namespace Esprima
                         NumericTokenType = NumericTokenType.Float,
                         Value = f,
                         NumericValue = f,
-                        LineNumber = LineNumber,
-                        LineStart = LineStart,
-                        Start = start,
-                        End = Index
-                    };
-                }
-                else
-                    TolerateUnexpectedToken();
-            }
-            else if (ch == 'd' || ch == 'D') // double
-            {
-                Index++;
-
-                if (double.TryParse(sb.ToString(),
-                    NumberStyles.AllowDecimalPoint | NumberStyles.AllowExponent | NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture,
-                    out var d))
-                {
-                    return new Token
-                    {
-                        Type = TokenType.NumericLiteral,
-                        NumericTokenType = NumericTokenType.Double,
-                        Value = d,
-                        NumericValue = d,
                         LineNumber = LineNumber,
                         LineStart = LineStart,
                         Start = start,
@@ -1409,16 +1257,6 @@ namespace Esprima
                     token.NumericTokenType = NumericTokenType.Integer;
                     token.Value = i;
                 }
-                else if (long.TryParse(
-                    number,
-                    NumberStyles.AllowDecimalPoint | NumberStyles.AllowExponent | NumberStyles.AllowLeadingSign,
-                    CultureInfo.InvariantCulture,
-                    out var l))
-                {
-                    token.NumericValue = l;
-                    token.NumericTokenType = NumericTokenType.Long;
-                    token.Value = l;
-                }
                 else if (float.TryParse(
                     number, NumberStyles.AllowDecimalPoint | NumberStyles.AllowExponent | NumberStyles.AllowLeadingSign,
                     CultureInfo.InvariantCulture,
@@ -1428,24 +1266,9 @@ namespace Esprima
                     token.NumericTokenType = NumericTokenType.Float;
                     token.Value = f;
                 }
-                else if (double.TryParse(
-                    number, NumberStyles.AllowDecimalPoint | NumberStyles.AllowExponent | NumberStyles.AllowLeadingSign,
-                    CultureInfo.InvariantCulture,
-                    out var d))
-                {
-                    token.NumericValue = d;
-                    token.NumericTokenType = NumericTokenType.Double;
-                    token.Value = d;
-                }
                 else
                 {
-                    d = number.TrimStart().StartsWith("-")
-                        ? double.NegativeInfinity
-                        : double.PositiveInfinity;
-
-                    token.NumericValue = d;
-                    token.NumericTokenType = NumericTokenType.Double;
-                    token.Value = d;
+                    ThrowUnexpectedToken();
                 }
             }
 
@@ -2178,17 +2001,9 @@ namespace Esprima
                 return ScanIdentifierLiteral();
             }
 
-            // ADHOC: ' - Symbol literal
-            if (cp == 0x27)
+            if (cp == 0x27 || cp == 0x22)
             {
-                return ScanSymbolLiteral();
-            }
-
-            // Template literals start with " (U+0060) for template head
-            // or } (U+007D) for template middle or template tail.
-            if (cp == 0x22 || cp == 0x7D && _curlyStack.Count > 0 && _curlyStack[_curlyStack.Count - 1] == "%{")
-            {
-                return ScanTemplate();
+                return ScanStringLiteral();
             }
 
             // Dot (.) U+002E can also start a floating-point number, hence the need
@@ -2219,6 +2034,8 @@ namespace Esprima
 
             return ScanPunctuator();
         }
+
+
 
         public RegexOptions ParseRegexOptions(string flags)
         {

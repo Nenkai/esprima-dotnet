@@ -4,19 +4,15 @@ namespace Esprima.Ast
 {
     public sealed class StaticDeclaration : Declaration
     {
-        public readonly VariableDeclarationKind Kind;
-
-        public VariableDeclarator Declaration;
+        public VariableDeclaration Declaration;
 
         public override NodeCollection ChildNodes => new NodeCollection(Declaration);
 
         public StaticDeclaration(
-            VariableDeclarator expr,
-            VariableDeclarationKind kind)
+            VariableDeclaration expr)
             : base(Nodes.StaticDeclaration)
         {
             Declaration = expr;
-            Kind = kind;
         }
 
         protected internal override void Accept(AstVisitor visitor)

@@ -2,10 +2,10 @@
 {
     public enum VariableDeclarationKind
     {
-        Var,
-        Static,
-        Attribute,
-        Delegate,
+        Int,
+        Fixed,
+        String,
+        Array,
         Invalid,
     }
 }
