@@ -55,22 +55,15 @@ namespace Esprima
             "do",
             "for",
             "static", // ADHOC
-            "new",
-            "try",
             "else", 
             "case",
             "void",
             "while",
             "break",
-            "catch",
-            "throw",
-            "const",
-            "yield",
             "return",
             "typeof",
             "switch",
             "default",
-            "finally",
             "function",
             "continue",
 
@@ -85,11 +78,11 @@ namespace Esprima
             "static",
         };
 
-        private static readonly HashSet<string> FutureReservedWords = new() { "enum", "super" };
+        private static readonly HashSet<string> FutureReservedWords = new() {  };
 
-        private static readonly string[] threeCharacterPunctutors = { /*"===", "!==", ">>>",*/ "<<=", ">>=", "**=", "&&=", "||=" };
+        private static readonly string[] threeCharacterPunctutors = { /*"===", "!==", ">>>",*/ "<<=", ">>=", };
 
-        private static readonly string[] twoCharacterPunctuators = { "&&", "||", "==", "!=", "+=", "-=", "*=", "/=", "++", "--", "<<", ">>", "&=", "|=", "^=", "%=", "<=", ">=", "=>", "**" };
+        private static readonly string[] twoCharacterPunctuators = { "&&", "||", "==", "!=", "+=", "-=", "*=", "/=", "++", "--", "<<", ">>", "&=", "|=", "^=", "%=", "<=", ">=", };
 
         private static int HexValue(char ch)
         {
@@ -771,12 +764,7 @@ namespace Esprima
                 case '.':
                     ++Index;
 
-                    if (RemainingChars() >= 1 && Source[Index] == '*')
-                    {
-                        Index++;
-                        str = ".*";
-                    }
-                    else if (RemainingChars() >= 2 && Source[Index] == '.' && Source[Index + 1] == '.')
+                    if (RemainingChars() >= 2 && Source[Index] == '.' && Source[Index + 1] == '.')
                     {
                         // Spread operator: ...
                         Index += 2;
@@ -846,6 +834,11 @@ namespace Esprima
                     {
                         ++Index;
                         str = "-=";
+                    }
+                    else if (RemainingChars() >= 1 && Source[Index] == '>')
+                    {
+                        ++Index;
+                        str = "->";
                     }
                     break;
                 case ')':
