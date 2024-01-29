@@ -1408,6 +1408,19 @@ namespace Esprima
                     var quasi = ParseTemplateLiteral(true);
                     expr = Finalize(StartNode(startToken), new TaggedTemplateExpression(expr, quasi));
                 }
+                else if (Match(".") || optional)
+                {
+                    _context.IsBindingElement = false;
+                    _context.IsAssignmentTarget = !optional;
+                    if (!optional)
+                    {
+                        Expect(".");
+                    }
+
+                    Expression property = ParseIdentifierName();
+
+                    expr = Finalize(StartNode(startToken), new AttributeMemberExpression(expr, property, optional));
+                }
                 else if (Match("->") || optional)
                 {
                     _context.IsBindingElement = false;
@@ -1428,7 +1441,7 @@ namespace Esprima
                         property = Finalize(StartNode(startToken), new StaticMemberExpression(property, property2, optional));
                     }
 
-                    expr = Finalize(StartNode(startToken), new AttributeMemberExpression(expr, property, optional));
+                    expr = Finalize(StartNode(startToken), new OCMemberExpression(expr, property, optional));
                 }
                 else if (Match("::") || optional)
                 {
@@ -1574,10 +1587,12 @@ namespace Esprima
                             TolerateError(Messages.StrictLHSPostfix);
                         }
 
+                        /*
                         if (!_context.IsAssignmentTarget)
                         {
                             TolerateError(Messages.InvalidLHSInAssignment);
                         }
+                        */
 
                         _context.IsAssignmentTarget = false;
                         _context.IsBindingElement = false;
