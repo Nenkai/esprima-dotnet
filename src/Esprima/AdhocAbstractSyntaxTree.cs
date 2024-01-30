@@ -2665,9 +2665,9 @@ namespace Esprima
                 _lastMarker.Line = line.Value - 1;
 
                 var fileToken = NextToken();
-                SetFileName(fileToken.RawTemplate);
+                SetFileName((string)fileToken.Value);
 
-                return new SourceFileStatement(fileToken.RawTemplate);
+                return new SourceFileStatement((string)fileToken.Value);
             }
             else if (_lookahead.Type == TokenType.Identifier)
             {
