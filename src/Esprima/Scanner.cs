@@ -1270,7 +1270,7 @@ namespace Esprima
             {
                 Index++;
 
-                if (Source[Index] == 'l' || Source[Index] == 'L') // Unsigned long
+                if (Index < Source.Length && (Source[Index] == 'l' || Source[Index] == 'L')) // Unsigned long
                 {
                     Index++;
                     ulong ulongValue = ulong.Parse(sb.ToString());
@@ -1306,12 +1306,16 @@ namespace Esprima
             {
                 Index++;
 
-                long longValue = long.Parse(sb.ToString());
+                // Parse as ulong first, since long.MinValue won't be parsed thru long.Parse
+                var longValue = ulong.Parse(sb.ToString());
+                if (longValue > (ulong)long.MaxValue + 1)
+                    TolerateUnexpectedToken("Long literal overflows");
+
                 return new Token
                 {
                     Type = TokenType.NumericLiteral,
                     NumericTokenType = NumericTokenType.Long,
-                    Value = longValue,
+                    Value = (long)longValue,
                     NumericValue = longValue,
                     LineNumber = LineNumber,
                     LineStart = LineStart,
