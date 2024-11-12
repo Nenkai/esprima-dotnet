@@ -1316,7 +1316,7 @@ namespace Esprima
                     Type = TokenType.NumericLiteral,
                     NumericTokenType = NumericTokenType.Long,
                     Value = (long)longValue,
-                    NumericValue = longValue,
+                    NumericValue = (long)longValue,
                     LineNumber = LineNumber,
                     LineStart = LineStart,
                     Start = start,
