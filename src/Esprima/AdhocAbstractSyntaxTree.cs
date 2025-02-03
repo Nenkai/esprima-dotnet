@@ -1088,7 +1088,9 @@ namespace Esprima
             var quasis = new ArrayList<TemplateElement>();
 
             var quasi = ParseTemplateHead(isTagged);
-            quasis.Add(quasi);
+            if (!string.IsNullOrEmpty(quasi.Value.Cooked))
+                quasis.Add(quasi);
+
             while (!quasi.Tail)
             {
                 if (IsEndOfFile())
