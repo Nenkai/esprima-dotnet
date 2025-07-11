@@ -198,6 +198,11 @@ namespace Esprima
             }
 
             var node = CreateNode();
+
+            // For some reason the script only starts from the first token so startMarker is used to set the line for this.
+            // Set it to 1 otherwise #line preprocessor can cause some position/marker asserts.
+            node.Line = 1;
+
             var body = ParseDirectivePrologues();
             while (_lookahead.Type != TokenType.EOF)
             {
@@ -3247,7 +3252,9 @@ namespace Esprima
                 int? line = _lookahead.NumericValue as int?;
                 NextToken();
 
+                // We need to set this before parsing the source string, since _lookahead will be set in NextToken().
                 _scanner.LineNumber = line.Value - 1;
+                _startMarker.Line = line.Value - 1;
                 _lastMarker.Line = line.Value - 1;
 
                 var fileToken = NextToken();
