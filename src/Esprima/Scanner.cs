@@ -62,7 +62,7 @@ namespace Esprima
             "try",
             "let", // ADHOC: NOT SUPPORTED
             "self", // ADHOC: Changed from "this"
-            "else", 
+            "else",
             "case",
             "void",
             "with", // ADHOC: NOT SUPPORTED
@@ -88,7 +88,7 @@ namespace Esprima
             "function",
             "method", // ADHOC
             "continue",
-            "debugger",
+            // "debugger",
             "instanceof",
             "undef", // ADHOC
             "print", // ADHOC (GT4 etc)
@@ -98,12 +98,12 @@ namespace Esprima
 
         private static readonly HashSet<string> StrictModeReservedWords = new()
         {
-            "implements",
-            "interface",
-            "package",
-            "private",
-            "protected",
-            "public",
+            // "implements",
+            // "interface",
+            // "package",
+            // "private",
+            // "protected",
+            // "public",
             "static",
             "yield",
             "let" // ADHOC: NOT SUPPORTED
