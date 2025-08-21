@@ -3340,10 +3340,12 @@ namespace Esprima
 
         private ReturnStatement ParseReturnStatement()
         {
+            /* ADHOC: Allowed at top level
             if (!_context.InFunctionBody)
             {
                 TolerateError(Messages.IllegalReturn);
             }
+            */
 
             var node = CreateNode();
             ExpectKeyword("return");
