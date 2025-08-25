@@ -113,7 +113,8 @@ namespace Esprima
 
         private static readonly string[] threeCharacterPunctutors = { /*"===", "!==", ">>>",*/ "<<=", ">>=", "**=", "&&=", "||=" };
 
-        private static readonly string[] twoCharacterPunctuators = { "&&", "||", "==", "!=", "+=", "-=", "*=", "/=", "++", "--", "<<", ">>", "&=", "|=", "^=", "%=", "<=", ">=", "=>", "**" };
+        private static readonly string[] twoCharacterPunctuators = { "&&", "||", "==", "!=", "+=", "-=", "*=", "/=", "++", "--", "<<", ">>", 
+            "&=", "|=", "^=", "%=", "<=", ">=", /* "=>" ADHOC: Not supported , */ "**" };
 
         private static int HexValue(char ch)
         {

@@ -1004,7 +1004,7 @@ namespace Esprima
             return false;
         }
 
-        private ObjectExpression ParseObjectInitializer()
+        private Expression ParseObjectInitializer()
         {
             var node = CreateNode();
 
@@ -1017,6 +1017,11 @@ namespace Esprima
 
             while (!Match("}"))
             {
+                if (IsEndOfFile())
+                {
+                    return Finalize(node, new ErrorExpression());
+                }
+
                 var property = ParseSpreadElement(); // ADHOC: Fixme
                 properties.Add(property);
 
@@ -1200,10 +1205,12 @@ namespace Esprima
             if (Match(")"))
             {
                 NextToken();
+                /* ADHOC: Not supported
                 if (!Match("=>"))
                 {
                     Expect("=>");
                 }
+                */
 
                 expr = ArrowParameterPlaceHolder.Empty;
             }
@@ -1215,10 +1222,13 @@ namespace Esprima
                 {
                     var rest = ParseRestElement(ref parameters);
                     Expect(")");
+
+                    /* ADHOC: Not supported
                     if (!Match("=>"))
                     {
                         Expect("=>");
                     }
+                    */
 
                     expr = new ArrowParameterPlaceHolder(new NodeList<Expression>(new Expression[] { rest }, 1), false);
                 }
@@ -1268,10 +1278,13 @@ namespace Esprima
 
                                 expressions.Add(ParseRestElement(ref parameters));
                                 Expect(")");
+
+                                /* ADHOC: Not Supported
                                 if (!Match("=>"))
                                 {
                                     Expect("=>");
                                 }
+                                */
 
                                 _context.IsBindingElement = false;
                                 var reinterpretedExpressions = new ArrayList<Expression>();
@@ -1304,6 +1317,8 @@ namespace Esprima
                     if (!arrow)
                     {
                         Expect(")");
+
+                        /* ADHOC: Not supported
                         if (Match("=>"))
                         {
                             if (expr.Type == Nodes.Identifier && ((Identifier) expr).Name == "yield")
@@ -1345,6 +1360,7 @@ namespace Esprima
                                 }
                             }
                         }
+                        */
 
                         _context.IsBindingElement = false;
                     }
@@ -1616,6 +1632,7 @@ namespace Esprima
                     }
 
                     expr = Finalize(StartNode(startToken), new CallExpression(expr, args, optional));
+                    /* ADHOC: Not supported
                     if (asyncArrow && Match("=>"))
                     {
                         var nodeArguments = new ArrayList<Expression>();
@@ -1626,6 +1643,7 @@ namespace Esprima
 
                         expr = new ArrowParameterPlaceHolder(NodeList.From(ref nodeArguments), true);
                     }
+                    */
                 }
                 else if (Match(".*"))
                 {
@@ -2304,6 +2322,7 @@ namespace Esprima
                     }
                 }
 
+                /* ADHOC: Not supported
                 if (expr.Type == Nodes.ArrowParameterPlaceHolder || Match("=>"))
                 {
                     // https://tc39.github.io/ecma262/#sec-arrow-function-definitions
@@ -2315,12 +2334,10 @@ namespace Esprima
 
                     if (list != null)
                     {
-                        /* ADHOC: Not needed
                         if (_hasLineTerminator)
                         {
                             TolerateUnexpectedToken(_lookahead);
                         }
-                        */
 
                         _context.FirstCoverInitializedNameError = null;
 
@@ -2371,43 +2388,44 @@ namespace Esprima
                 }
                 else
                 {
-                    if (MatchAssign())
+                */
+                if (MatchAssign())
+                {
+                    if (!_context.IsAssignmentTarget)
                     {
-                        if (!_context.IsAssignmentTarget)
-                        {
-                            TolerateError(Messages.InvalidLHSInAssignment);
-                        }
-
-                        if (_context.Strict && expr.Type == Nodes.Identifier)
-                        {
-                            var id = expr.As<Identifier>();
-                            if (Scanner.IsRestrictedWord(id.Name))
-                            {
-                                TolerateUnexpectedToken(token, Messages.StrictLHSAssignment);
-                            }
-
-                            if (Scanner.IsStrictModeReservedWord(id.Name))
-                            {
-                                TolerateUnexpectedToken(token, Messages.StrictReservedWord);
-                            }
-                        }
-
-                        if (!Match("="))
-                        {
-                            _context.IsAssignmentTarget = false;
-                            _context.IsBindingElement = false;
-                        }
-                        else
-                        {
-                            expr = ReinterpretExpressionAsPattern(expr);
-                        }
-
-                        token = NextToken();
-                        var right = IsolateCoverGrammar(parseAssignmentExpression);
-                        expr = Finalize(StartNode(startToken), new AssignmentExpression((string) token.Value!, expr, right));
-                        _context.FirstCoverInitializedNameError = null;
+                        TolerateError(Messages.InvalidLHSInAssignment);
                     }
+
+                    if (_context.Strict && expr.Type == Nodes.Identifier)
+                    {
+                        var id = expr.As<Identifier>();
+                        if (Scanner.IsRestrictedWord(id.Name))
+                        {
+                            TolerateUnexpectedToken(token, Messages.StrictLHSAssignment);
+                        }
+
+                        if (Scanner.IsStrictModeReservedWord(id.Name))
+                        {
+                            TolerateUnexpectedToken(token, Messages.StrictReservedWord);
+                        }
+                    }
+
+                    if (!Match("="))
+                    {
+                        _context.IsAssignmentTarget = false;
+                        _context.IsBindingElement = false;
+                    }
+                    else
+                    {
+                        expr = ReinterpretExpressionAsPattern(expr);
+                    }
+
+                    token = NextToken();
+                    var right = IsolateCoverGrammar(parseAssignmentExpression);
+                    expr = Finalize(StartNode(startToken), new AssignmentExpression((string) token.Value!, expr, right));
+                    _context.FirstCoverInitializedNameError = null;
                 }
+                //}
             }
 
             _assignmentDepth--;
