@@ -660,6 +660,9 @@ namespace Esprima
                 case TokenType.Punctuator:
                     switch ((string?) _lookahead.Value)
                     {
+                        case "|": // ADHOC
+                            expr = ParseListAssignmentElementList();
+                            break;
                         case "(":
                             _context.IsBindingElement = false;
                             expr = InheritCoverGrammar(parseGroupExpression);
@@ -2184,7 +2187,6 @@ namespace Esprima
                 case Nodes.ObjectPattern:
                     throw new Exception("Removed for adhoc");
 
-                    break;
                 default:
                     break;
             }
@@ -2679,7 +2681,7 @@ namespace Esprima
                     break;
                 }
 
-                properties.Push(ParseRestProperty(ref parameters, kind)); // Changed for ADHOc, fix me maybe
+                properties.Push(ParseRestProperty(ref parameters, kind)); // Changed for ADHOC, fix me maybe
                 if (!Match("}"))
                 {
                     Expect(",");
@@ -2701,7 +2703,8 @@ namespace Esprima
             }
             else if (Match("{"))
             {
-                pattern = ParseObjectPattern(ref parameters, kind);
+                // pattern = ParseObjectPattern(ref parameters, kind);
+                pattern = ParseListAssignmentNestedElementList(); // ADHOC: Allow function test(a, {b, c})
             }
             else
             {
@@ -2847,12 +2850,109 @@ namespace Esprima
                 return Finalize(node, id);
         }
 
+        // ADHOC: LIST_ASSIGN
+        private Statement ParseListAssignment()
+        {
+            var node = CreateNode();
+            var elements = ParseListAssignmentElementList();
+
+            if (!Match("="))
+                TolerateUnexpectedToken(_lookahead);
+            NextToken();
+
+            var init = IsolateCoverGrammar(parseAssignmentExpression);
+            return Finalize(node, new ListAssignementStatement(elements, init));
+        }
+
+        private ListAssignementExpression ParseListAssignmentElementList()
+        {
+            Expect("|");
+            var marker = CreateNode();
+            var list = ParseListAssignmentElements();
+
+            var hasRestElement = false;
+            if (Match("..."))
+            {
+                hasRestElement = true;
+                NextToken();
+            }
+
+            Expect("|");
+
+            return Finalize(marker, new ListAssignementExpression(NodeList.From(ref list), hasRestElement));
+        }
+
+        private ListAssignementExpression ParseListAssignmentNestedElementList()
+        {
+            Expect("{");
+            var marker = CreateNode();
+            var list = ParseListAssignmentElements();
+
+            var hasRestElement = false;
+            if (Match("..."))
+            {
+                hasRestElement = true;
+                NextToken();
+            }
+
+            Expect("}");
+
+            return Finalize(marker, new ListAssignementExpression(NodeList.From(ref list), hasRestElement));
+        }
+
+        private ArrayList<Node> ParseListAssignmentElements()
+        {
+            var list = new ArrayList<Node>();
+            list.Push(ParseListAssignmentElement());
+
+            while (Match(","))
+            {
+                if (IsEndOfFile())
+                {
+                    TolerateUnexpectedToken(_lookahead);
+                    break;
+                }
+
+                NextToken();
+                list.Push(ParseListAssignmentElement());
+            }
+
+            return list;
+        }
+
+        // ADHOC: For LIST_ASSIGN
+        private Node ParseListAssignmentElement()
+        {
+            var node = CreateNode();
+            if (MatchKeyword("var"))
+            {
+                NextToken();
+
+                var id = ParseIdentifierName();
+                if (_context.Strict && id.Type == Nodes.Identifier)
+                {
+                    if (Scanner.IsRestrictedWord(id.As<Identifier>().Name))
+                    {
+                        TolerateError(Messages.StrictVarName);
+                    }
+                }
+
+                return Finalize(node, new VariableDeclarator(id, null));
+            }
+            else if (Match("{"))
+            {
+                return ParseListAssignmentNestedElementList();
+            }
+            else
+            {
+                return ParseLeftHandSideExpression();
+            }
+        }
+
         private VariableDeclarator ParseVariableDeclaration(ref bool inFor)
         {
             var node = CreateNode();
-
-            var parameters = new ArrayList<Token>();
-            var id = ParsePattern(ref parameters, VariableDeclarationKind.Var);
+            var id = ParseIdentifierName();
 
             if (_context.Strict && id.Type == Nodes.Identifier)
             {
@@ -3119,6 +3219,24 @@ namespace Esprima
 
                         init = Finalize(initNode, new VariableDeclaration(declarations, VariableDeclarationKind.Var));
                         Expect(";");
+                    }
+                }
+                else if (Match("|")) // ADHOC: LIST_ASSIGN
+                {
+                    var initNode = CreateNode();
+
+                    var previousAllowIn = _context.AllowIn;
+                    _context.AllowIn = false;
+                    var variableList = ParseListAssignmentElementList();
+                    _context.AllowIn = previousAllowIn;
+
+                    if (forKeyword.Equals("foreach") && MatchContextualKeyword("in"))
+                    {
+                        left = Finalize(initNode, variableList);
+                        NextToken();
+
+                        right = ParseAssignmentExpression();
+                        init = null;
                     }
                 }
                 else
@@ -3618,6 +3736,10 @@ namespace Esprima
                     if (value == "{")
                     {
                         statement = ParseBlock();
+                    }
+                    else if (value == "|") // ADHOC: LIST_ASSIGN
+                    {
+                        statement = ParseListAssignment();
                     }
                     else if (value == "(")
                     {
@@ -4617,7 +4739,7 @@ namespace Esprima
         {
             var node = CreateNode();
 
-            Expect("*");
+            Expect("*"); 
             NextToken();
 
             return Finalize(node, new Identifier("*"));
@@ -4673,7 +4795,7 @@ namespace Esprima
 
             if (target is null && namespacePath.Count >= 2)
                 target = namespacePath.Pop().Local;
-            
+
             ConsumeSemicolon();
 
             return Finalize(node, new ImportDeclaration(NodeList.From(ref namespacePath), target));

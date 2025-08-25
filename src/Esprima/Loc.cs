@@ -16,15 +16,17 @@ namespace Esprima
 
         public Location(in Position start, in Position end, string? source)
         {
+            /*
 #if LOCATION_ASSERTS
             if (start == default && end != default
                 || end == default && start != default
                 || end.Line < start.Line
                 || start.Line > 0 && start.Line == end.Line && end.Column < start.Column)
             {
-                EsprimaExceptionHelper.ThrowArgumentOutOfRangeException(nameof(end), end, Exception<ArgumentOutOfRangeException>.DefaultMessage);
+                EsprimaExceptionHelper.ThrowArgumentOutOfRangeException(nameof(end), end, Exception<ArgumentOutOfRangeException>.DefaultMessage + $" Last source: {source}");
             }
 #endif
+            */
 
             Start = start;
             End = end;

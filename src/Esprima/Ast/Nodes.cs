@@ -86,5 +86,7 @@
         PrintStatement,
         DelegateDeclaration,
         StaticIdentifier,
+        ListAssignmentStatement,
+        ListAssignmentExpression,
     };
 }
