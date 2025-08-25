@@ -1323,30 +1323,7 @@ namespace Esprima
                     End = Index
                 };
             }
-            else if (ch == 'f' || ch == 'F') // Float
-            {
-                Index++;
-
-                if (float.TryParse(sb.ToString(),
-                    NumberStyles.AllowDecimalPoint | NumberStyles.AllowExponent | NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture,
-                    out var f))
-                {
-                    return new Token
-                    {
-                        Type = TokenType.NumericLiteral,
-                        NumericTokenType = NumericTokenType.Float,
-                        Value = f,
-                        NumericValue = f,
-                        LineNumber = LineNumber,
-                        LineStart = LineStart,
-                        Start = start,
-                        End = Index
-                    };
-                }
-                else
-                    TolerateUnexpectedToken();
-            }
-            else if (ch == 'd' || ch == 'D') // double
+            else if (ch == 'd' || ch == 'D') // Adhoc: double
             {
                 Index++;
 
