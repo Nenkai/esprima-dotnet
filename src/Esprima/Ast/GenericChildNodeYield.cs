@@ -36,5 +36,11 @@ namespace Esprima.Ast
         {
             return new NodeCollection(first._items, first._count, second);
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static NodeCollection Yield<T>(in NodeList<T> first, Node? second, Node? third) where T : Node
+        {
+            return new NodeCollection(first._items, first._count, second, third);
+        }
     }
 }

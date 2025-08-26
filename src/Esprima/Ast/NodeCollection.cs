@@ -64,6 +64,14 @@ namespace Esprima.Ast
             _count = firstCount + 1;
         }
 
+        internal NodeCollection(Node[] first, int firstCount, Node second, Node third)
+            : this(second, null, null, null, third)
+        {
+            _list1 = first;
+            _list1Count = firstCount;
+            _count = firstCount + 2;
+        }
+
         internal NodeCollection(Node first, Node[] second, int secondCount)
             : this(first, null, null, null, null)
         {
