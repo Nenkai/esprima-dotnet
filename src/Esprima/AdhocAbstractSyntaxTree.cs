@@ -4763,14 +4763,15 @@ namespace Esprima
             return Finalize(node, new Identifier("*"));
         }
 
-        private ImportDeclaration ParseImportDeclaration()
+        private ImportDeclaration ParseImportDeclaration() // ADHOC
         {
             var node = CreateNode();
             ExpectKeyword("import");
 
             var namespacePath = new ArrayList<ImportDeclarationSpecifier>();
 
-            Identifier target = null;
+            Identifier? target = null;
+            Identifier? alias = null;
             if (IsIdentifierName(_lookahead))
             {
                 ImportDefaultSpecifier mainNamespace = ParseImportSpecifier();
@@ -4811,12 +4812,18 @@ namespace Esprima
                 TolerateUnexpectedToken(NextToken());
             }
 
-            if (target is null && namespacePath.Count >= 2)
+            if (MatchContextualKeyword("as"))
+            {
+                NextToken();
+                alias = ParseIdentifierName();
+            }
+
+            if (target is null && namespacePath.Count >= 1)
                 target = namespacePath.Pop().Local;
 
             ConsumeSemicolon();
 
-            return Finalize(node, new ImportDeclaration(NodeList.From(ref namespacePath), target));
+            return Finalize(node, new ImportDeclaration(NodeList.From(ref namespacePath), target, alias));
         }
 
         private DelegateDeclaration ParseDelegateDeclaration()
