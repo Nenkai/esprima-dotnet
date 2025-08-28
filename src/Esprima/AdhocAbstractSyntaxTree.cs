@@ -2869,7 +2869,7 @@ namespace Esprima
         }
 
         // ADHOC: LIST_ASSIGN
-        private Statement ParseListAssignment()
+        private ListAssignementStatement ParseListAssignment()
         {
             var node = CreateNode();
             var elements = ParseListAssignmentElementList();
@@ -2879,6 +2879,8 @@ namespace Esprima
             NextToken();
 
             var init = IsolateCoverGrammar(parseAssignmentExpression);
+            ConsumeSemicolon();
+
             return Finalize(node, new ListAssignementStatement(elements, init));
         }
 
