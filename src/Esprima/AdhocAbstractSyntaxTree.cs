@@ -729,10 +729,12 @@ namespace Esprima
                         {
                             expr = ParseClassExpression();
                         }
+                        /* ADHOC: Not available in adhoc
                         else if (MatchKeyword("new"))
                         {
                             expr = ParseNewExpression();
                         }
+                        */
                         else if (MatchKeyword("import")) // ADHOC
                         {
                             var decl = ParseImportDeclaration();

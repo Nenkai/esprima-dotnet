@@ -58,26 +58,26 @@ namespace Esprima
             //"in" // ADHOC but only contextual
             "static", // ADHOC
             "attribute", // ADHOC
-            "new",
+            //"new", // ADHOC: NOT SUPPORTED
             "try",
-            "let", // ADHOC: NOT SUPPORTED
+            //"let", // ADHOC: NOT SUPPORTED
             "self", // ADHOC: Changed from "this"
             "else",
             "case",
-            "void",
+            //"void",  // ADHOC: NOT SUPPORTED
             "with", // ADHOC: NOT SUPPORTED
             //"enum", // ADHOC: NOT SUPPORTED
             "while",
             "break",
             "catch",
             "throw",
-            "const",
-            "yield",
+            //"const",  // ADHOC: NOT SUPPORTED
+            //"yield",  // ADHOC: NOT SUPPORTED
             "class",
             "module", // ADHOC
             "super",
             "return",
-            "typeof",
+            //"typeof", // ADHOC: NOT SUPPORTED
             //"delete",
             "switch",
             //"export", ADHOC: NOT SUPPORTED
@@ -89,7 +89,7 @@ namespace Esprima
             "method", // ADHOC
             "continue",
             // "debugger",
-            "instanceof",
+            //"instanceof", ADHOc: NOT SUPPORTED
             "undef", // ADHOC
             "print", // ADHOC (GT4 etc)
             "delegate", // ADHOC (>= GTS)
@@ -106,7 +106,7 @@ namespace Esprima
             // "public",
             "static",
             "yield",
-            "let" // ADHOC: NOT SUPPORTED
+            //"let" // ADHOC: NOT SUPPORTED
         };
 
         private static readonly HashSet<string> FutureReservedWords = new() { "enum", "super" };
