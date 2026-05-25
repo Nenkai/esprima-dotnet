@@ -2303,7 +2303,7 @@ namespace Esprima
                 TolerateUnexpectedToken(_lookahead, "Maximum statements depth reached");
             }
 
-            if (!_context.AllowYield && MatchKeyword("yield"))
+            if (!_context.AllowYield && MatchContextualKeyword("yield"))
             {
                 expr = ParseYieldExpression();
             }
@@ -4649,7 +4649,7 @@ namespace Esprima
         private YieldExpression ParseYieldExpression()
         {
             var node = CreateNode();
-            ExpectKeyword("yield");
+            NextToken(); // yield consumed as contextual keyword
 
             Expression? argument = null;
             var delegat = false;
