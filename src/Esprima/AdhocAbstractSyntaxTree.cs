@@ -2303,7 +2303,7 @@ namespace Esprima
                 TolerateUnexpectedToken(_lookahead, "Maximum statements depth reached");
             }
 
-            if (!_context.AllowYield && MatchContextualKeyword("yield"))
+            if (MatchContextualKeyword("yield"))
             {
                 expr = ParseYieldExpression();
             }
