@@ -72,7 +72,7 @@ namespace Esprima
             "catch",
             "throw",
             //"const",  // ADHOC: NOT SUPPORTED
-            //"yield",  // ADHOC: NOT SUPPORTED
+            "yield",
             "class",
             "module", // ADHOC
             "super",
