@@ -6,20 +6,17 @@ namespace Esprima.Ast
     {
         public readonly Statement Block;
         public readonly CatchClause? Handler;
-        public readonly Statement? Finalizer;
 
         public TryStatement(
             Statement block,
-            CatchClause? handler,
-            Statement? finalizer) :
+            CatchClause? handler) :
             base(Nodes.TryStatement)
         {
             Block = block;
             Handler = handler;
-            Finalizer = finalizer;
         }
 
-        public override NodeCollection ChildNodes => new(Block, Handler, Finalizer);
+        public override NodeCollection ChildNodes => new(Block, Handler);
 
         protected internal override void Accept(AstVisitor visitor)
         {
