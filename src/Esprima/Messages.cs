@@ -39,7 +39,7 @@
         public const string MultipleDefaultsInSwitch = "More than one default clause in switch statement";
         public const string NewlineAfterThrow = "Illegal newline after throw";
         public const string NoAsAfterImportNamespace = "Unexpected token";
-        public const string NoCatchOrFinally = "Missing catch or finally after try";
+        //public const string NoCatchOrFinally = "Missing catch or finally after try"; // Adhoc: allowed, actually.
         public const string NumericSeperatorOneUnderscore = "Numeric separator must be exactly one underscore";
         public const string NumericSeperatorNotAllowedHere = "Numeric separator is not allowed here";
         public const string ParameterAfterRestParameter = "Rest parameter must be last formal parameter";

@@ -71,6 +71,7 @@
         ClassExpression,
 
         // ADHOC
+        ModuleDeclaration,
         StaticDeclaration,
         IncludeStatement,
         ReferenceVariableExpression,

@@ -393,7 +393,6 @@ namespace Esprima.Utils
                 {
                     Member("block", tryStatement.Block);
                     Member("handler", tryStatement.Handler);
-                    Member("finalizer", tryStatement.Finalizer);
                 }
             }
 

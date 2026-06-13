@@ -79,11 +79,6 @@ namespace Esprima.Utils
             {
                 Visit(tryStatement.Handler);
             }
-
-            if (tryStatement.Finalizer is not null)
-            {
-                Visit(tryStatement.Finalizer);
-            }
         }
 
         protected internal virtual void VisitThrowStatement(ThrowStatement throwStatement)

@@ -725,10 +725,6 @@ namespace Esprima
                         {
                             expr = ParseYieldExpression();
                         }
-                        else if (MatchKeyword("class") || MatchKeyword("module"))
-                        {
-                            expr = ParseClassExpression();
-                        }
                         /* ADHOC: Not available in adhoc
                         else if (MatchKeyword("new"))
                         {
@@ -868,12 +864,10 @@ namespace Esprima
 
             Expect("]");
 
-#nullable disable
             if (isMap)
                 return Finalize(node, new MapExpression(map));
             else
                 return Finalize(node, new ArrayExpression(NodeList.From(ref arrElements)));
-#nullable enable
         }
 
         // https://tc39.github.io/ecma262/#sec-object-initializer
@@ -1163,9 +1157,7 @@ namespace Esprima
                         }
                     }
 
-#nullable disable
                     node = new ArrayPattern(NodeList.From(ref elements));
-#nullable enable
                     node.Range = expr.Range;
                     node.Location = expr.Location;
 
@@ -1176,7 +1168,6 @@ namespace Esprima
                     {
                         // FIXME - adhoc
                         properties.Add(ReinterpretExpressionAsPattern(property!));
-                        
                     }
 
                     node = new ObjectPattern(NodeList.From(ref properties));
@@ -2487,8 +2478,10 @@ namespace Esprima
                         statement = ParseSubroutineDeclaration();
                         break;
                     case "module":
+                        statement = ParseModuleDeclaration();
+                        break;
                     case "class":
-                        statement = ParseClassOrModuleDeclaration();
+                        statement = ParseClassDeclaration();
                         break;
                     case "let":
                         TolerateUnexpectedToken(_lookahead, "let is not supported in Adhoc.");
@@ -2663,9 +2656,7 @@ namespace Esprima
 
             Expect("]");
 
-#nullable disable
             return Finalize(node, new ArrayPattern(NodeList.From(ref elements)));
-#nullable enable
         }
 
 
@@ -3611,10 +3602,15 @@ namespace Esprima
 
                 _context.LabelSet.Add(key);
                 Statement body;
-                if (MatchKeyword("class") || MatchKeyword("module"))
+                if (MatchKeyword("class"))
                 {
                     TolerateUnexpectedToken(_lookahead);
-                    body = ParseClassOrModuleDeclaration();
+                    body = ParseClassDeclaration();
+                }
+                else if (MatchKeyword("module"))
+                {
+                    TolerateUnexpectedToken(_lookahead);
+                    body = ParseModuleDeclaration();
                 }
                 else if (MatchKeyword("function"))
                 {
@@ -3727,14 +3723,8 @@ namespace Esprima
 
             var block = ParseBlock();
             var handler = MatchKeyword("catch") ? ParseCatchClause() : null;
-            var finalizer = MatchKeyword("finally") ? ParseFinallyClause() : null;
 
-            if (handler == null && finalizer == null)
-            {
-                TolerateError(Messages.NoCatchOrFinally);
-            }
-
-            return Finalize(node, new TryStatement(block, handler, finalizer));
+            return Finalize(node, new TryStatement(block, handler)); // Adhoc: finalizer not part of it.
         }
 
         // https://tc39.github.io/ecma262/#sec-ecmascript-language-statements-and-declarations
@@ -4674,7 +4664,7 @@ namespace Esprima
             return Finalize(node, new YieldExpression(argument, delegat));
         }
 
-        private Statement ParseClassOrModuleDeclaration(bool identifierIsOptional = false)
+        private Statement ParseClassDeclaration(bool identifierIsOptional = false)
         {
             var node = CreateNode();
 
@@ -4682,10 +4672,42 @@ namespace Esprima
             var previousAllowSuper = _context.AllowSuper;
             _context.Strict = true;
 
-            bool isModule = _lookahead.Value as string == "module";
-            ExpectKeyword("class", "module");
+            ExpectKeyword("class");
+
+            // Regular class or module declaration
+            var id = identifierIsOptional && _lookahead.Type != TokenType.Identifier
+                ? null
+                : ParseVariableIdentifierAllowStatic();
+
+            Expression? superClass = null;
+
+            // ADHOC: ':' instead of extends
+            if (Match(":"))
+            {
+                NextToken();
+                superClass = IsolateCoverGrammar(ParseStaticIdentifierName);
+                _context.AllowSuper = true;
+            }
+
+            var classBody = ParseBlock();
+            _context.Strict = previousStrict;
+            _context.AllowSuper = previousAllowSuper;
+
+            return Finalize(node, new ClassDeclaration(id, superClass, classBody));
+        }
+
+        private Statement ParseModuleDeclaration()
+        {
+            var node = CreateNode();
+
+            var previousStrict = _context.Strict;
+            var previousAllowSuper = _context.AllowSuper;
+            _context.Strict = true;
+
+            ExpectKeyword("module");
 
             // ADHOC: Module Constructor
+
             if (Match("("))
             {
                 NextToken();
@@ -4699,53 +4721,17 @@ namespace Esprima
             }
             else
             {
+
                 // Regular class or module declaration
-                var id = identifierIsOptional && _lookahead.Type != TokenType.Identifier
-                    ? null
-                    : ParseVariableIdentifierAllowStatic();
+                var id = ParseVariableIdentifierAllowStatic();
 
-                Expression? superClass = null;
-
-                // ADHOC: ':' instead of extends
-                if (Match(":"))
-                {
-                    NextToken();
-                    superClass = IsolateCoverGrammar(ParseStaticIdentifierName);
-                    _context.AllowSuper = true;
-                }
-
-                var classBody = ParseBlock();
+                var moduleBody = ParseBlock();
                 _context.Strict = previousStrict;
                 _context.AllowSuper = previousAllowSuper;
 
-                return Finalize(node, new ClassDeclaration(id, superClass, classBody) { IsModule = isModule });
+                return Finalize(node, new ModuleDeclaration(id, moduleBody));
+
             }
-        }
-
-        private ClassExpression ParseClassExpression()
-        {
-            var node = CreateNode();
-
-            var previousStrict = _context.Strict;
-            _context.Strict = true;
-
-            bool isModule = _lookahead.Value as string == "module";
-            ExpectKeyword("class", "module");
-            var id = _lookahead.Type == TokenType.Identifier
-                ? ParseVariableIdentifierAllowStatic()
-                : null;
-
-            Expression? superClass = null;
-            if (Match(":"))
-            {
-                NextToken();
-                superClass = IsolateCoverGrammar(ParseLeftHandSideExpressionAllowCall);
-            }
-
-            var classBody = ParseBlock();
-            _context.Strict = previousStrict;
-
-            return Finalize(node, new ClassExpression(id, superClass, classBody) {  IsModule = isModule });
         }
 
         // import <foo> ...;
