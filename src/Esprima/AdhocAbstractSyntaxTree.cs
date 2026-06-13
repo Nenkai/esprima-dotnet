@@ -349,7 +349,7 @@ namespace Esprima
 
         private T Finalize<T>(Marker marker, T node) where T : Node
         {
-            node.Range = new Range(marker.Index, _lastMarker.Index);
+            node.Range = new Esprima.Ast.Range(marker.Index, _lastMarker.Index);
 
             var start = new Position(marker.Line, marker.Column);
             var end = new Position(_lastMarker.Line, _lastMarker.Column);
