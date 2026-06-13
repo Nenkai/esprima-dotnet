@@ -90,5 +90,6 @@
         ListAssignmentStatement,
         ListAssignmentExpression,
         PragmaDumpStatement,
+        PragmaExecStatement,
     };
 }

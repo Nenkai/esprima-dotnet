@@ -96,6 +96,7 @@ namespace Esprima
             "require", // ADHOC
 
             "dump",
+            "exec",
         };
 
         private static readonly HashSet<string> StrictModeReservedWords = new()

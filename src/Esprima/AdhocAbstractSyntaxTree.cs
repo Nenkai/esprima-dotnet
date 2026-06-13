@@ -3062,6 +3062,13 @@ namespace Esprima
                 Expression path = ParseLeftHandSideExpression();
                 statement = new PragmaDumpStatement(path);
             }
+            else if (MatchKeyword("exec"))
+            {
+                NextToken();
+
+                BlockStatement path = ParseBlock();
+                statement = new PragmaExecStatement(path);
+            }
             else
             {
                 statement = new ErrorStatement();
