@@ -3069,6 +3069,13 @@ namespace Esprima
                 BlockStatement path = ParseBlock();
                 statement = new PragmaExecStatement(path);
             }
+            else if (MatchKeyword("current_module"))
+            {
+                NextToken();
+
+                Expression path = ParseLeftHandSideExpression();
+                statement = new PragmaCurrentModuleStatement(path);
+            }
             else
             {
                 statement = new ErrorStatement();

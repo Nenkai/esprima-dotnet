@@ -97,6 +97,7 @@ namespace Esprima
 
             "dump",
             "exec",
+            "current_module",
         };
 
         private static readonly HashSet<string> StrictModeReservedWords = new()

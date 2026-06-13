@@ -91,5 +91,6 @@
         ListAssignmentExpression,
         PragmaDumpStatement,
         PragmaExecStatement,
+        PragmaCurrentModuleStatement,
     };
 }
