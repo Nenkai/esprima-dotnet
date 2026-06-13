@@ -3048,6 +3048,30 @@ namespace Esprima
             return Finalize(node, new EmptyStatement());
         }
 
+        // ADHOC
+        private Statement ParsePragmaStatement()
+        {
+            var node = CreateNode();
+            Expect("@");
+
+            Statement statement;
+            if (MatchKeyword("dump"))
+            {
+                NextToken();
+
+                Expression path = ParseLeftHandSideExpression();
+                statement = new PragmaDumpStatement(path);
+            }
+            else
+            {
+                statement = new ErrorStatement();
+            }
+
+            ConsumeSemicolon();
+
+            return Finalize(node, statement);
+        }
+
         // https://tc39.github.io/ecma262/#sec-expression-statement
 
         private ExpressionStatement ParseExpressionStatement()
@@ -3399,14 +3423,14 @@ namespace Esprima
                 if (_lookahead.Value as string == "include")
                     NextToken();
 
-                return new ErrorStatement(); // TODO: FIX ME!!
+                return Finalize(node, new ErrorStatement()); // TODO: FIX ME!!
             }
             else
             {
                 TolerateUnexpectedToken(_lookahead, "Unexpected token for preprocessor directive statement");
             }
 
-            return new ErrorStatement();
+            return Finalize(node, new ErrorStatement());
         }
 
         private IncludeStatement ParseIncludeStatement()
@@ -3765,6 +3789,10 @@ namespace Esprima
                     {
                         statement = ParsePreprocessorDirectiveStatement();
                     }
+                    else if (value == "@")
+                    {
+                        statement = ParsePragmaStatement();
+                    }
                     else
                     {
                         statement = ParseExpressionStatement();
@@ -3856,7 +3884,8 @@ namespace Esprima
                     TolerateUnexpectedToken(_lookahead);
                     NextToken();
 
-                    return new ErrorStatement();
+                    statement = new ErrorStatement();
+                    break;
             }
 
             return statement;

@@ -1,6 +1,6 @@
-﻿using Esprima.Utils;
-
+﻿using System;
 using System.Collections.Generic;
+using Esprima.Utils;
 
 namespace Esprima.Ast
 {
@@ -21,7 +21,7 @@ namespace Esprima.Ast
 
         protected internal override void Accept(AstVisitor visitor)
         {
-            throw new System.Exception("Not implemented");
+            throw new NotImplementedException();
         }
     }
 }

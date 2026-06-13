@@ -3,12 +3,13 @@ using Esprima.Utils;
 
 namespace Esprima.Ast
 {
-    public class IncludeStatement : Statement
+    public class PragmaDumpStatement : Statement
     {
-        public string Path { get; set; }
+        public Expression Path { get; set; }
 
-        public IncludeStatement() : base(Nodes.IncludeStatement)
+        public PragmaDumpStatement(Expression pathExpression) : base(Nodes.PragmaDumpStatement)
         {
+            Path = pathExpression;
         }
 
         public override NodeCollection ChildNodes => NodeCollection.Empty;

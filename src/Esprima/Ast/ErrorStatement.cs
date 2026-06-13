@@ -1,10 +1,11 @@
-﻿using Esprima.Utils;
+﻿using System;
+using Esprima.Utils;
 
 namespace Esprima.Ast
 {
     public sealed class ErrorStatement : Statement
     {
-        public ErrorStatement() : base(Nodes.ReturnStatement)
+        public ErrorStatement() : base(Nodes.ErrorStatement)
         {
 
         }
@@ -13,7 +14,7 @@ namespace Esprima.Ast
 
         protected internal override void Accept(AstVisitor visitor)
         {
-            
+            throw new NotImplementedException();
         }
     }
 }

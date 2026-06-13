@@ -67,14 +67,14 @@
         ImportSpecifier,
         ImportDefaultSpecifier,
         ImportNamespaceSpecifier,
-        ImportDeclaration,
         ClassExpression,
 
         // ADHOC
+        ImportDeclaration,
+        ErrorStatement,
         ModuleDeclaration,
         StaticDeclaration,
         IncludeStatement,
-        ReferenceVariableExpression,
         FinalizerStatement,
         SelfFinalizerExpression,
         MapExpression,
@@ -89,5 +89,6 @@
         StaticIdentifier,
         ListAssignmentStatement,
         ListAssignmentExpression,
+        PragmaDumpStatement,
     };
 }

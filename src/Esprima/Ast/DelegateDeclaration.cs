@@ -1,4 +1,5 @@
-﻿using System.Xml.Linq;
+﻿using System;
+using System.Xml.Linq;
 using Esprima.Utils;
 
 namespace Esprima.Ast
@@ -19,7 +20,7 @@ namespace Esprima.Ast
 
         protected internal override void Accept(AstVisitor visitor)
         {
-
+            throw new NotImplementedException();
         }
     }
 }

@@ -1,4 +1,5 @@
-﻿using Esprima.Utils;
+﻿using System;
+using Esprima.Utils;
 
 namespace Esprima.Ast
 {
@@ -36,7 +37,7 @@ namespace Esprima.Ast
 
         protected internal override void Accept(AstVisitor visitor)
         {
-            visitor.VisitFunctionExpression(this);
+            throw new NotImplementedException();
         }
     }
 }

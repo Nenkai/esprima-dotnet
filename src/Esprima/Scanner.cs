@@ -94,6 +94,8 @@ namespace Esprima
             "print", // ADHOC (GT4 etc)
             "delegate", // ADHOC (>= GTS)
             "require", // ADHOC
+
+            "dump",
         };
 
         private static readonly HashSet<string> StrictModeReservedWords = new()
@@ -880,6 +882,7 @@ namespace Esprima
                 case ']':
                 case '~':
                 case '#': // Adhoc include
+                case '@': // Adhoc pragma
                     ++Index;
                     break;
 
