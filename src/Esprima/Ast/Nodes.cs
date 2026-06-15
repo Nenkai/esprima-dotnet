@@ -97,5 +97,6 @@
         PragmaUseStrictStatement,
         PragmaPopStrictStatement,
         PragmaPushStrictStatement,
+        PragmaIncludeStatement,
     };
 }

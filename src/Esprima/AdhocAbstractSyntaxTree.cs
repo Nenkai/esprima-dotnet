@@ -3076,6 +3076,22 @@ namespace Esprima
                 Expression path = ParseLeftHandSideExpression();
                 statement = new PragmaCurrentModuleStatement(path);
             }
+            else if (MatchKeyword("include"))
+            {
+                NextToken();
+
+                if (_lookahead.Type == TokenType.Template || _lookahead.Type == TokenType.StringLiteral)
+                {
+                    var path = NextToken();
+
+                    statement = new PragmaIncludeStatement(path.Value as string);
+                }
+                else
+                {
+                    TolerateError("Expected string literal for include statement value.", _lookahead.Value);
+                    statement = new ErrorStatement();
+                }
+            }
             else if (MatchKeyword("attribute") || MatchKeyword("static") || MatchKeyword("delegate") || MatchKeyword("function") ||
                 MatchKeyword("method") || MatchKeyword("module") || MatchKeyword("class"))
             {
@@ -3528,7 +3544,7 @@ namespace Esprima
                 TolerateError("Expected string literal for include statement value.", _lookahead.Value);
             }
 
-            return null;
+            return null; // FIXME
         }
 
         private RequireStatement ParseRequireStatement()
