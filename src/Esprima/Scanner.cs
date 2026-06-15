@@ -94,14 +94,6 @@ namespace Esprima
             "print", // ADHOC (GT4 etc)
             "delegate", // ADHOC (>= GTS)
             "require", // ADHOC
-
-            "dump",
-            "exec",
-            "current_module",
-            "use_strict",
-            "no_strict",
-            "pop_strict",
-            "push_strict",
         };
 
         private static readonly HashSet<string> StrictModeReservedWords = new()
@@ -121,7 +113,7 @@ namespace Esprima
 
         private static readonly string[] threeCharacterPunctutors = { /*"===", "!==", ">>>",*/ "<<=", ">>=", "**=", "&&=", "||=" };
 
-        private static readonly string[] twoCharacterPunctuators = { "&&", "||", "==", "!=", "+=", "-=", "*=", "/=", "++", "--", "<<", ">>", 
+        private static readonly string[] twoCharacterPunctuators = { "&&", "||", "==", "!=", "+=", "-=", "*=", "/=", "++", "--", "<<", ">>",
             "&=", "|=", "^=", "%=", "<=", ">=", /* "=>" ADHOC: Not supported , */ "**" };
 
         private static int HexValue(char ch)
@@ -867,7 +859,7 @@ namespace Esprima
                         str = "::";
                     }
                     break;
-                case '-': 
+                case '-':
                     ++Index;
 
                     if (RemainingChars() >= 1 && Source[Index] == '-')
@@ -978,7 +970,7 @@ namespace Esprima
                     value = Convert.ToUInt32(number, 16);
                     tokenType = NumericTokenType.UnsignedInteger;
                 }
-            } 
+            }
             else if (Source.CharCodeAt(Index) == 'l' || Source.CharCodeAt(Index) == 'L') // Long
             {
                 Index++;
@@ -1124,7 +1116,7 @@ namespace Esprima
             {
                 Type = TokenType.NumericLiteral,
                 NumericTokenType = NumericTokenType.Integer,
-                NumericValue = (int)numericValue,
+                NumericValue = (int) numericValue,
                 Value = number,
                 Octal = octal,
                 LineNumber = LineNumber,
@@ -1318,15 +1310,15 @@ namespace Esprima
 
                 // Parse as ulong first, since long.MinValue won't be parsed thru long.Parse
                 var longValue = ulong.Parse(sb.ToString());
-                if (longValue > (ulong)long.MaxValue + 1)
+                if (longValue > (ulong) long.MaxValue + 1)
                     TolerateUnexpectedToken("Long literal overflows");
 
                 return new Token
                 {
                     Type = TokenType.NumericLiteral,
                     NumericTokenType = NumericTokenType.Long,
-                    Value = (long)longValue,
-                    NumericValue = (long)longValue,
+                    Value = (long) longValue,
+                    NumericValue = (long) longValue,
                     LineNumber = LineNumber,
                     LineStart = LineStart,
                     Start = start,

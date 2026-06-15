@@ -607,7 +607,7 @@ namespace Esprima
                     token = NextToken();
                     raw = GetTokenRaw(token);
 
-                    expr = Finalize(node, new Literal((string?)token.Value, raw));
+                    expr = Finalize(node, new Literal((string?) token.Value, raw));
                     break;
 
                 case TokenType.NumericLiteral:
@@ -1903,7 +1903,7 @@ namespace Esprima
         {
             Expression expr;
 
-            if (Match("+") || Match("-") || Match("~") || Match("!") ||  MatchKeyword("void") || MatchKeyword("typeof") ||
+            if (Match("+") || Match("-") || Match("~") || Match("!") || MatchKeyword("void") || MatchKeyword("typeof") ||
                 Match("*") || Match("&")) // ADHOC
             {
                 // ADHOC: We can assign with references, i.e *val = 1;
@@ -2622,7 +2622,7 @@ namespace Esprima
 
             Expect("[");
             var elements = new ArrayList<Expression?>();
-            while (!Match("]") )
+            while (!Match("]"))
             {
                 if (IsEndOfFile())
                 {
@@ -2809,7 +2809,7 @@ namespace Esprima
 
             var token = NextToken();
 
-            if (token.Type == TokenType.Keyword && (string?)token.Value == "yield")
+            if (token.Type == TokenType.Keyword && (string?) token.Value == "yield")
             {
                 if (_context.Strict)
                 {
@@ -2823,7 +2823,7 @@ namespace Esprima
             }
             else if (token.Type != TokenType.Identifier)
             {
-                if (_context.Strict && token.Type == TokenType.Keyword && Scanner.IsStrictModeReservedWord((string?)token.Value))
+                if (_context.Strict && token.Type == TokenType.Keyword && Scanner.IsStrictModeReservedWord((string?) token.Value))
                 {
                     TolerateUnexpectedToken(token, Messages.StrictReservedWord);
                 }
@@ -2836,7 +2836,7 @@ namespace Esprima
                     }
                 }
             }
-            else if ((_context.IsModule || _context.IsAsync) && token.Type == TokenType.Identifier && (string?)token.Value == "await")
+            else if ((_context.IsModule || _context.IsAsync) && token.Type == TokenType.Identifier && (string?) token.Value == "await")
             {
                 TolerateUnexpectedToken(token);
             }
@@ -3055,28 +3055,28 @@ namespace Esprima
             Expect("@");
 
             Statement statement;
-            if (MatchKeyword("dump"))
+            if (MatchContextualKeyword("dump"))
             {
                 NextToken();
 
                 Expression path = ParseLeftHandSideExpression();
                 statement = new PragmaDumpStatement(path);
             }
-            else if (MatchKeyword("exec"))
+            else if (MatchContextualKeyword("exec"))
             {
                 NextToken();
 
                 BlockStatement path = ParseBlock();
                 statement = new PragmaExecStatement(path);
             }
-            else if (MatchKeyword("current_module"))
+            else if (MatchContextualKeyword("current_module"))
             {
                 NextToken();
 
                 Expression path = ParseLeftHandSideExpression();
                 statement = new PragmaCurrentModuleStatement(path);
             }
-            else if (MatchKeyword("include"))
+            else if (MatchContextualKeyword("include"))
             {
                 NextToken();
 
@@ -3104,19 +3104,19 @@ namespace Esprima
 
                 statement = new PragmaVarStatement(typeName, new VariableDeclaration(declarations, VariableDeclarationKind.Var));
             }
-            else if (MatchKeyword("no_strict"))
+            else if (MatchContextualKeyword("no_strict"))
             {
                 NextToken();
 
                 statement = new PragmaNoStrictStatement();
             }
-            else if (MatchKeyword("use_strict"))
+            else if (MatchContextualKeyword("use_strict"))
             {
                 NextToken();
 
                 statement = new PragmaUseStrictStatement();
             }
-            else if (MatchKeyword("push_strict"))
+            else if (MatchContextualKeyword("push_strict"))
             {
                 NextToken();
 
@@ -3151,7 +3151,7 @@ namespace Esprima
                         break;
                 }
             }
-            else if (MatchKeyword("pop_strict"))
+            else if (MatchContextualKeyword("pop_strict"))
             {
                 NextToken();
 
@@ -4379,7 +4379,7 @@ namespace Esprima
                 return Finalize(node, new MethodDeclaration(id, parameters, body, isGenerator, hasStrictDirective, isAsync));
         }
 
- 
+
 
         private FunctionExpression ParseFunctionExpression()
         {
@@ -4871,7 +4871,7 @@ namespace Esprima
         {
             var node = CreateNode();
 
-            Expect("*"); 
+            Expect("*");
             NextToken();
 
             return Finalize(node, new Identifier("*"));
@@ -5053,7 +5053,7 @@ namespace Esprima
 
         private T ThrowUnexpectedToken<T>(Token? token = null, string? message = null)
         {
-             throw UnexpectedTokenError(token, message);
+            throw UnexpectedTokenError(token, message);
         }
 
         private void TolerateUnexpectedToken(Token token, string? message = null)
