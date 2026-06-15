@@ -93,5 +93,9 @@
         PragmaExecStatement,
         PragmaCurrentModuleStatement,
         PragmaVarStatement,
+        PragmaNoStrictStatement,
+        PragmaUseStrictStatement,
+        PragmaPopStrictStatement,
+        PragmaPushStrictStatement,
     };
 }

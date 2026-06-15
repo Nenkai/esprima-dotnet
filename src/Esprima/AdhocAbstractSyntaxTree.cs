@@ -3088,6 +3088,59 @@ namespace Esprima
 
                 statement = new PragmaVarStatement(typeName, new VariableDeclaration(declarations, VariableDeclarationKind.Var));
             }
+            else if (MatchKeyword("no_strict"))
+            {
+                NextToken();
+
+                statement = new PragmaNoStrictStatement();
+            }
+            else if (MatchKeyword("use_strict"))
+            {
+                NextToken();
+
+                statement = new PragmaUseStrictStatement();
+            }
+            else if (MatchKeyword("push_strict"))
+            {
+                NextToken();
+
+                Literal literal;
+                switch (_lookahead.Type)
+                {
+                    case TokenType.NumericLiteral:
+                        {
+                            _context.IsAssignmentTarget = false;
+                            _context.IsBindingElement = false;
+                            var token = NextToken();
+                            var raw = GetTokenRaw(token);
+                            literal = Finalize(node, new Literal(token.NumericTokenType, token.NumericValue, raw));
+                            statement = new PragmaPushStrictStatement(literal);
+                        }
+                        break;
+
+                    case TokenType.BooleanLiteral:
+                        {
+                            _context.IsAssignmentTarget = false;
+                            _context.IsBindingElement = false;
+                            var token = NextToken();
+                            var raw = GetTokenRaw(token);
+                            literal = Finalize(node, new Literal("true".Equals(token.Value), raw));
+                            statement = new PragmaPushStrictStatement(literal);
+                        }
+                        break;
+
+                    default:
+                        TolerateUnexpectedToken(_lookahead);
+                        statement = new ErrorStatement();
+                        break;
+                }
+            }
+            else if (MatchKeyword("pop_strict"))
+            {
+                NextToken();
+
+                statement = new PragmaPopStrictStatement();
+            }
             else
             {
                 statement = new ErrorStatement();
