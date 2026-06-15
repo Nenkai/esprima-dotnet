@@ -3076,6 +3076,18 @@ namespace Esprima
                 Expression path = ParseLeftHandSideExpression();
                 statement = new PragmaCurrentModuleStatement(path);
             }
+            else if (MatchKeyword("attribute") || MatchKeyword("static") || MatchKeyword("delegate") || MatchKeyword("function") ||
+                MatchKeyword("method") || MatchKeyword("module") || MatchKeyword("class"))
+            {
+                Identifier typeName = ParseIdentifierName();
+
+                // TODO: declarations may be paths too. support that potentially.
+                var inFor = false;
+                var declarations = ParseVariableDeclarationList(ref inFor);
+                ConsumeSemicolon();
+
+                statement = new PragmaVarStatement(typeName, new VariableDeclaration(declarations, VariableDeclarationKind.Var));
+            }
             else
             {
                 statement = new ErrorStatement();

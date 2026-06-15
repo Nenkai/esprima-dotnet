@@ -92,5 +92,6 @@
         PragmaDumpStatement,
         PragmaExecStatement,
         PragmaCurrentModuleStatement,
+        PragmaVarStatement,
     };
 }
