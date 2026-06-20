@@ -9,9 +9,9 @@ namespace Esprima;
 /// Provides JavaScript parsing capabilities.
 /// </summary>
 /// <remarks>
-/// Use the <see cref="ParseScript" />, <see cref="ParseModule" /> or <see cref="ParseExpression(string, bool)" /> methods to parse the JavaScript code.
+/// Use the <see cref="ParseScript" /> or <see cref="ParseExpression(string, bool)" /> methods to parse the JavaScript code.
 /// </remarks>
-public partial class JavaScriptParser
+public partial class AdhocAbstractSyntaxTree
 {
     internal sealed class Context
     {
@@ -93,7 +93,7 @@ public partial class JavaScriptParser
         Decorator = 2,
     }
 
-    [StringMatcher("=", "*=", "**=", "/=", "%=", "+=", "-=", "<<=", ">>=", ">>>=", "&=", "^=", "|=", "&&=", "||=", "??=")]
+    [StringMatcher("=", "*=", "**=", "/=", "%=", "+=", "-=", "<<=", ">>=", "&=", "^=", "|=", "&&=", "||=", "??=")]
     private static partial bool IsAssignmentOperator(string id);
 
     // cache frequently called Func so we don't need to build Func<T> instances all the time
@@ -102,11 +102,9 @@ public partial class JavaScriptParser
     private readonly Func<Expression> _parseBinaryExpressionOperand;
     private readonly Func<Expression> _parseUnaryExpression;
     private readonly Func<Expression> _parseExpression;
-    private readonly Func<Expression> _parseNewExpression;
     private readonly Func<Expression> _parsePrimaryExpression;
     private readonly Func<Expression> _parseGroupExpression;
     private readonly Func<Expression> _parseArrayInitializer;
-    private readonly Func<Expression> _parseObjectInitializer;
     private readonly Func<Expression> _parseBinaryExpression;
     private readonly Func<Expression> _parseLeftHandSideExpression;
     private readonly Func<Expression> _parseLeftHandSideExpressionAllowCall;
@@ -133,18 +131,18 @@ public partial class JavaScriptParser
     private protected List<SyntaxComment>? _comments;
 
     /// <summary>
-    /// Creates a new <see cref="JavaScriptParser" /> instance.
+    /// Creates a new <see cref="AdhocAbstractSyntaxTree" /> instance.
     /// </summary>
-    public JavaScriptParser() : this(ParserOptions.Default)
+    public AdhocAbstractSyntaxTree() : this(ParserOptions.Default)
     {
     }
 
     /// <summary>
-    /// Creates a new <see cref="JavaScriptParser" /> instance.
+    /// Creates a new <see cref="AdhocAbstractSyntaxTree" /> instance.
     /// </summary>
     /// <param name="options">The parser options.</param>
     /// <returns></returns>
-    public JavaScriptParser(ParserOptions options)
+    public AdhocAbstractSyntaxTree(ParserOptions options)
     {
         if (options == null)
         {
@@ -167,11 +165,9 @@ public partial class JavaScriptParser
         _parseBinaryExpressionOperand = ParseBinaryExpressionOperand;
         _parseUnaryExpression = ParseUnaryExpression;
         _parseExpression = ParseExpression;
-        _parseNewExpression = ParseNewExpression;
         _parsePrimaryExpression = ParsePrimaryExpression;
         _parseGroupExpression = ParseGroupExpression;
         _parseArrayInitializer = ParseArrayInitializer;
-        _parseObjectInitializer = ParseObjectInitializer;
         _parseBinaryExpression = ParseBinaryExpression;
         _parseLeftHandSideExpression = ParseLeftHandSideExpression;
         _parseLeftHandSideExpressionAllowCall = ParseLeftHandSideExpressionAllowCall;
@@ -212,35 +208,6 @@ public partial class JavaScriptParser
     }
 
     // https://tc39.github.io/ecma262/#sec-scripts
-    // https://tc39.github.io/ecma262/#sec-modules
-
-    /// <summary>
-    /// Parses the code as a JavaScript module.
-    /// </summary>
-    public Module ParseModule(string code, string? source = null)
-    {
-        Reset(code, source);
-        try
-        {
-            _context.Strict = true;
-            _context.IsAsync = true;
-            _context.IsModule = true;
-            _scanner._isModule = true;
-
-            var node = CreateNode();
-            var body = ParseDirectivePrologues();
-            while (_lookahead.Type != TokenType.EOF)
-            {
-                body.Push(ParseStatementListItem());
-            }
-
-            return FinalizeRoot(Finalize(node, new Module(NodeList.From(ref body))));
-        }
-        finally
-        {
-            ReleaseLargeBuffers();
-        }
-    }
 
     /// <summary>
     /// Parses the code as a JavaScript script.
@@ -358,15 +325,6 @@ public partial class JavaScriptParser
 
         var next = _scanner.Lex(new LexOptions(_context.Strict, allowIdentifierEscape));
         _hasLineTerminator = token.Type != TokenType.Unknown && next.Type != TokenType.Unknown && token.LineNumber != next.LineNumber;
-
-        if (_context.Strict && next.Type == TokenType.Identifier)
-        {
-            var nextValue = (string) next.Value!;
-            if (Scanner.IsStrictModeReservedWord(nextValue))
-            {
-                next = next.ChangeType(TokenType.Keyword);
-            }
-        }
 
         _lookahead = next;
 
@@ -693,10 +651,6 @@ public partial class JavaScriptParser
                 {
                     TolerateUnexpectedToken(_lookahead);
                 }
-                if ((_context.InClassFieldInit || _context.InClassStaticBlock) && "arguments".Equals(_lookahead._value))
-                {
-                    TolerateError(Messages.ArgumentsNotAllowedInClassField);
-                }
 
                 if (MatchAsyncFunction())
                 {
@@ -764,9 +718,6 @@ public partial class JavaScriptParser
                     case "[":
                         expr = InheritCoverGrammar(_parseArrayInitializer);
                         break;
-                    case "{":
-                        expr = InheritCoverGrammar(_parseObjectInitializer);
-                        break;
                     case "/":
                     case "/=":
                         _context.IsAssignmentTarget = false;
@@ -775,16 +726,6 @@ public partial class JavaScriptParser
                         token = NextRegExpToken();
                         raw = GetTokenRaw(token);
                         expr = Finalize(node, new RegExpLiteral(token.RegexValue!, token.RegExpParseResult, raw));
-                        break;
-                    case "#":
-                        expr = ParsePrivateIdentifier(node);
-                        if (!_context.InClassBody)
-                        {
-                            ThrowError(Messages.PrivateFieldOutsideClass, "#" + expr.As<PrivateIdentifier>().Name);
-                        }
-                        break;
-                    case "@":
-                        expr = ParseDecoratedPrimaryExpression(node);
                         break;
                     default:
                         token = NextToken();
@@ -811,32 +752,6 @@ public partial class JavaScriptParser
                     {
                         expr = ParseFunctionExpression();
                     }
-                    else if (MatchKeyword("this"))
-                    {
-                        NextToken();
-                        expr = Finalize(node, new ThisExpression());
-                    }
-                    else if (MatchKeyword("class"))
-                    {
-                        expr = ParseClassExpression();
-                    }
-                    else if (MatchKeyword("new"))
-                    {
-                        expr = ParseNewExpression();
-                    }
-                    else if (MatchImportCall())
-                    {
-                        expr = ParseImportCall();
-                    }
-                    else if (MatchImportMeta())
-                    {
-                        if (!_context.IsModule)
-                        {
-                            ThrowUnexpectedToken(_lookahead, Messages.CannotUseImportMetaOutsideAModule);
-                        }
-
-                        expr = ParseImportMeta();
-                    }
                     else
                     {
                         token = NextToken();
@@ -851,16 +766,6 @@ public partial class JavaScriptParser
         }
 
         return expr;
-    }
-
-    private Expression ParseDecoratedPrimaryExpression(in Marker node)
-    {
-        var previousDecorators = _context.Decorators;
-        _context.Decorators = ParseDecorators();
-        var expression = ParsePrimaryExpression();
-        _context.Decorators = previousDecorators;
-
-        return Finalize(node, expression);
     }
 
     // https://tc39.es/proposal-template-literal-revision/#sec-static-semantics-template-early-errors
@@ -997,246 +902,6 @@ public partial class JavaScriptParser
         _context.InClassStaticBlock = previousInClassStaticBlock;
 
         return Finalize(node, new FunctionExpression(null, NodeList.From(ref parameters.Parameters), method, isGenerator, hasStrictDirective, isAsync));
-    }
-
-    private Expression ParseObjectPropertyKey()
-    {
-        var node = CreateNode();
-        var token = NextToken();
-
-        Expression key;
-        switch (token.Type)
-        {
-            case TokenType.StringLiteral:
-                var raw = GetTokenRaw(token);
-                key = Finalize(node, new Literal((string) token.Value!, raw));
-                break;
-
-            case TokenType.NumericLiteral:
-                raw = GetTokenRaw(token);
-                key = Finalize(node, new Literal(TokenType.NumericLiteral, token.Value, raw));
-                break;
-
-            case TokenType.BigIntLiteral:
-                raw = GetTokenRaw(token);
-                key = Finalize(node, new Literal(TokenType.BigIntLiteral, token.Value, raw));
-                break;
-
-            case TokenType.Identifier:
-            case TokenType.BooleanLiteral:
-            case TokenType.NullLiteral:
-            case TokenType.Keyword:
-                key = Finalize(node, new Identifier((string) token.Value!));
-                break;
-
-            case TokenType.Punctuator when "[".Equals(token.Value):
-                key = IsolateCoverGrammar(_parseAssignmentExpression);
-                Expect("]");
-                break;
-
-            default:
-                return ThrowUnexpectedToken<Expression>(token);
-        }
-
-        return key;
-    }
-
-    private PrivateIdentifier ParsePrivateIdentifier()
-    {
-        return ParsePrivateIdentifier(CreateNode());
-    }
-
-    private PrivateIdentifier ParsePrivateIdentifier(in Marker node)
-    {
-        var prefixEnd = _lookahead.End;
-        NextToken();
-        if (prefixEnd != _lookahead.Start)
-            ThrowUnexpectedToken(_lookahead);
-
-        var token = NextToken();
-
-        switch (token.Type)
-        {
-            case TokenType.Identifier:
-            case TokenType.BooleanLiteral:
-            case TokenType.NullLiteral:
-            case TokenType.Keyword:
-                return Finalize(node, new PrivateIdentifier((string) token.Value!));
-
-            default:
-                return ThrowUnexpectedToken<PrivateIdentifier>(token);
-        }
-    }
-
-    private static bool IsPropertyKey(Node key, string value)
-    {
-        if (key.Type == Nodes.Identifier)
-        {
-            return value.Equals(key.As<Identifier>().Name, StringComparison.Ordinal);
-        }
-        else if (key.Type == Nodes.Literal)
-        {
-            return value.Equals(key.As<Literal>().StringValue, StringComparison.Ordinal);
-        }
-
-        return false;
-    }
-
-    private Property ParseObjectProperty(ref int protoCount)
-    {
-        var node = CreateNode();
-        var token = _lookahead;
-
-        Expression? key = null;
-        Node value;
-
-        PropertyKind kind;
-        var computed = false;
-        var method = false;
-        var shorthand = false;
-        var isAsync = false;
-        var isGenerator = false;
-
-        if (token.Type == TokenType.Identifier)
-        {
-            var id = (string) token.Value!;
-            NextToken();
-            computed = Match("[");
-            isAsync = !_hasLineTerminator && id == "async" &&
-                      !Match(":") && !Match("(") && !Match(",");
-            isGenerator = Match("*");
-            if (isGenerator)
-            {
-                NextToken();
-            }
-
-            key = isAsync ? ParseObjectPropertyKey() : Finalize(node, new Identifier(id));
-        }
-        else if (Match("*"))
-        {
-            NextToken();
-        }
-        else
-        {
-            computed = Match("[");
-            key = ParseObjectPropertyKey();
-        }
-
-        var lookaheadPropertyKey = QualifiedPropertyName(_lookahead);
-        if (token.Type == TokenType.Identifier && !isAsync && "get".Equals(token.Value) && lookaheadPropertyKey)
-        {
-            if (!"get".Equals(GetTokenRaw(token), StringComparison.Ordinal))
-            {
-                TolerateError(Messages.InvalidUnicodeKeyword, "get");
-            }
-
-            kind = PropertyKind.Get;
-            computed = Match("[");
-            key = ParseObjectPropertyKey();
-            value = ParseGetterMethod();
-        }
-        else if (token.Type == TokenType.Identifier && !isAsync && "set".Equals(token.Value) && lookaheadPropertyKey)
-        {
-            if (!"set".Equals(GetTokenRaw(token), StringComparison.Ordinal))
-            {
-                TolerateError(Messages.InvalidUnicodeKeyword, "set");
-            }
-
-            kind = PropertyKind.Set;
-            computed = Match("[");
-            key = ParseObjectPropertyKey();
-            value = ParseSetterMethod();
-        }
-        else if (token.Type == TokenType.Punctuator && "*".Equals(token.Value) && lookaheadPropertyKey)
-        {
-            kind = PropertyKind.Init;
-            computed = Match("[");
-            key = ParseObjectPropertyKey();
-            value = ParseGeneratorMethod(isAsync);
-            method = true;
-        }
-        else
-        {
-            if (key == null)
-            {
-                return ThrowUnexpectedToken<Property>(_lookahead);
-            }
-
-            kind = PropertyKind.Init;
-            if (Match(":") && !isAsync)
-            {
-                if (!computed && IsPropertyKey(key, "__proto__"))
-                {
-                    protoCount++;
-                }
-
-                NextToken();
-                value = InheritCoverGrammar(_parseAssignmentExpression);
-            }
-            else if (Match("("))
-            {
-                value = ParsePropertyMethodFunction(isAsync, isGenerator, allowSuperCall: false);
-                method = true;
-            }
-            else if (token.Type == TokenType.Identifier)
-            {
-                var id = (Identifier) key;
-                if (Match("="))
-                {
-                    _context.FirstCoverInitializedNameError = new StrongBox<Token>(_lookahead);
-                    NextToken();
-                    shorthand = true;
-                    var init = IsolateCoverGrammar(_parseAssignmentExpression);
-                    value = Finalize(node, new AssignmentPattern(id, init));
-                }
-                else
-                {
-                    shorthand = true;
-                    value = id;
-                }
-            }
-            else
-            {
-                return ThrowUnexpectedToken<Property>(NextToken());
-            }
-        }
-
-        return Finalize(node, new Property(kind, key, computed, value, method, shorthand));
-    }
-
-    private ObjectExpression ParseObjectInitializer()
-    {
-        var node = CreateNode();
-
-        var properties = new ArrayList<Node>();
-        var protoCount = 0;
-
-        Expect("{");
-
-        while (!Match("}"))
-        {
-            var property = Match("...") ? (Node) ParseSpreadElement() : ParseObjectProperty(ref protoCount);
-            properties.Add(property);
-
-            if (!Match("}") && (property is not Property { Method: true } || Match(",")))
-            {
-                ExpectCommaSeparator();
-            }
-        }
-
-        Expect("}");
-
-        if (protoCount > 1)
-        {
-            //  Annex B defines an early error for duplicate PropertyName of `__proto__`,
-            // in object initializers, but this does not apply to Object Assignment patterns
-            if (!MatchAssign())
-            {
-                ThrowError(Messages.DuplicateProtoProperty);
-            }
-        }
-
-        return Finalize(node, new ObjectExpression(NodeList.From(ref properties)));
     }
 
     // https://tc39.github.io/ecma262/#sec-template-literals
@@ -1596,19 +1261,9 @@ public partial class JavaScriptParser
         return Finalize(node, new Identifier((string) token.Value!));
     }
 
-    private Expression ParseIdentifierOrPrivateIdentifierName()
+    private Identifier ParseIdentifierOrPrivateIdentifierName()
     {
         var node = CreateNode();
-
-        if (Match("#"))
-        {
-            var privateIdentifier = ParsePrivateIdentifier(node);
-            if (!_context.InClassBody)
-            {
-                TolerateError(Messages.PrivateFieldOutsideClass, "#" + privateIdentifier.Name);
-            }
-            return privateIdentifier;
-        }
 
         var token = NextToken();
 
@@ -1618,52 +1273,6 @@ public partial class JavaScriptParser
         }
 
         return Finalize(node, new Identifier((string) token.Value!));
-    }
-
-    private Expression ParseNewExpression()
-    {
-        var node = CreateNode();
-        var id = ParseIdentifierName();
-
-        // assert(id.name == 'new', 'New expression must start with `new`');
-
-        Expression expr;
-        if (Match("."))
-        {
-            NextToken();
-            if (_lookahead is { Type: TokenType.Identifier, Value: "target" })
-            {
-                if (!_context.InFunctionBody && !_context.InClassBody)
-                {
-                    TolerateError(Messages.NewTargetNotAllowedHere);
-                }
-
-                var property = ParseIdentifierName();
-                expr = new MetaProperty(id, property);
-            }
-            else
-            {
-                return ThrowUnexpectedToken<Expression>(_lookahead);
-            }
-        }
-        else if (MatchImportCall())
-        {
-            return ThrowUnexpectedToken<Expression>(_lookahead, Messages.CannotUseImportWithNew);
-        }
-        else
-        {
-            var previousMemberAccessContext = _context.MemberAccessContext;
-            _context.MemberAccessContext = MemberAccessContext.NewExpressionCallee;
-            var callee = IsolateCoverGrammar(_parseLeftHandSideExpression);
-            _context.MemberAccessContext = previousMemberAccessContext;
-
-            var args = Match("(") ? ParseArguments() : new NodeList<Expression>();
-            expr = new NewExpression(callee, args);
-            _context.IsAssignmentTarget = false;
-            _context.IsBindingElement = false;
-        }
-
-        return Finalize(node, expr);
     }
 
     private Expression ParseAsyncArgument()
@@ -1702,102 +1311,6 @@ public partial class JavaScriptParser
         return NodeList.From(ref args);
     }
 
-    private bool MatchImportCall()
-    {
-        var match = MatchKeyword("import");
-        if (match)
-        {
-            var state = _scanner.SaveState();
-            _scanner.ScanCommentsInternal();
-            var next = _scanner.Lex(new LexOptions(_context));
-            _scanner.RestoreState(state);
-            match = next.Type == TokenType.Punctuator && (string?) next.Value == "(";
-        }
-
-        return match;
-    }
-
-    private ImportExpression ParseImportCall()
-    {
-        var node = CreateNode();
-        ExpectKeyword("import");
-        Expect("(");
-
-        var previousIsAssignmentTarget = _context.IsAssignmentTarget;
-        _context.IsAssignmentTarget = true;
-
-        var source = ParseAssignmentExpression();
-
-        Expression? attributes = null;
-        if (Match(","))
-        {
-            NextToken();
-
-            if (!Match(")"))
-                attributes = ParseAssignmentExpression();
-        }
-
-        _context.IsAssignmentTarget = previousIsAssignmentTarget;
-
-        if (!this.Match(")"))
-        {
-            if (Match(","))
-            {
-                NextToken();
-            }
-            this.Expect(")");
-        }
-        else
-        {
-            NextToken();
-        }
-
-        return Finalize(node, new ImportExpression(source, attributes));
-    }
-
-    private bool MatchImportMeta()
-    {
-        var match = MatchKeyword("import");
-        if (match)
-        {
-            var state = _scanner.SaveState();
-            _scanner.ScanCommentsInternal();
-            var lexOptions = new LexOptions(_context);
-            var dot = _scanner.Lex(lexOptions);
-            if (dot.Type == TokenType.Punctuator && Equals(dot.Value, "."))
-            {
-                _scanner.ScanCommentsInternal();
-                var meta = _scanner.Lex(lexOptions);
-                match = meta.Type == TokenType.Identifier && Equals(meta.Value, "meta");
-                if (match)
-                {
-                    if (meta.IsEscaped("meta"))
-                    {
-                        TolerateUnexpectedToken(meta, Messages.InvalidEscapedReservedWord);
-                    }
-                }
-            }
-            else
-            {
-                match = false;
-            }
-
-            _scanner.RestoreState(state);
-        }
-
-        return match;
-    }
-
-    private MetaProperty ParseImportMeta()
-    {
-        var node = CreateNode();
-        var id = ParseIdentifierName(); // 'import', already ensured by matchImportMeta
-        Expect(".");
-        var property = ParseIdentifierName(); // 'meta', already ensured by matchImportMeta
-        _context.IsAssignmentTarget = false;
-        return Finalize(node, new MetaProperty(id, property));
-    }
-
     private Expression ParseLeftHandSideExpressionAllowCall()
     {
         var startMarker = StartNode(_lookahead);
@@ -1806,38 +1319,7 @@ public partial class JavaScriptParser
         var previousAllowIn = _context.AllowIn;
         _context.AllowIn = true;
 
-        Expression expr;
-        var isSuper = MatchKeyword("super");
-        if (isSuper)
-        {
-            var node = CreateNode();
-            NextToken();
-            expr = Finalize(node, new Super());
-            if (Match("("))
-            {
-                if (!_context.AllowSuperCall)
-                {
-                    TolerateError(Messages.UnexpectedSuper);
-                }
-            }
-            else if (Match(".") || Match("["))
-            {
-                if (!_context.AllowSuperAccess)
-                {
-                    TolerateError(Messages.UnexpectedSuper);
-                }
-            }
-            else
-            {
-                TolerateError(Messages.UnexpectedSuper);
-            }
-        }
-        else
-        {
-            expr = MatchKeyword("new")
-                ? InheritCoverGrammar(_parseNewExpression)
-                : InheritCoverGrammar(_parsePrimaryExpression);
-        }
+        Expression expr = InheritCoverGrammar(_parsePrimaryExpression);
 
         var hasOptional = false;
         var hasCall = false;
@@ -1922,11 +1404,6 @@ public partial class JavaScriptParser
 
                 var property = ParseIdentifierOrPrivateIdentifierName();
 
-                if (isSuper && property.Type == Nodes.PrivateIdentifier)
-                {
-                    TolerateError(Messages.UnexpectedPrivateField);
-                }
-
                 _context.AllowIdentifierEscape = previousAllowIdentifierEscape;
                 expr = Finalize(startMarker, new StaticMemberExpression(expr, property, optional));
             }
@@ -1968,29 +1445,12 @@ public partial class JavaScriptParser
         return expr;
     }
 
-    private Super ParseSuperAccess()
-    {
-        var node = CreateNode();
-
-        ExpectKeyword("super");
-        if (!Match("[") && !Match("."))
-        {
-            ThrowUnexpectedToken(_lookahead);
-        }
-
-        return Finalize(node, new Super());
-    }
-
     private Expression ParseLeftHandSideExpression()
     {
         //assert(_context.AllowIn, 'callee of new expression always allow in keyword.');
 
         var startMarker = StartNode(_lookahead);
-        var expr = MatchKeyword("super") && _context.InFunctionBody
-            ? ParseSuperAccess()
-            : MatchKeyword("new")
-                ? InheritCoverGrammar(_parseNewExpression)
-                : InheritCoverGrammar(_parsePrimaryExpression);
+        var expr = InheritCoverGrammar(_parsePrimaryExpression);
 
         var hasOptional = false;
         while (true)
@@ -2090,11 +1550,6 @@ public partial class JavaScriptParser
 
     private Expression ParsePostfixUnaryExpression(Expression expr, in Marker marker)
     {
-        if (_context.Strict && expr.Type == Nodes.Identifier && Scanner.IsRestrictedWord(expr.As<Identifier>().Name))
-        {
-            TolerateError(Messages.StrictLHSPostfix);
-        }
-
         if (!_context.IsAssignmentTarget)
         {
             TolerateError(Messages.InvalidLHSInAssignment);
@@ -2111,10 +1566,6 @@ public partial class JavaScriptParser
     {
         var token = NextToken();
         var expr = InheritCoverGrammar(_parseUnaryExpression);
-        if (_context.Strict && expr.Type == Nodes.Identifier && Scanner.IsRestrictedWord(expr.As<Identifier>().Name))
-        {
-            TolerateError(Messages.StrictLHSPrefix);
-        }
 
         if (!_context.IsAssignmentTarget)
         {
@@ -2139,7 +1590,7 @@ public partial class JavaScriptParser
     private Expression ParseUnaryExpression()
     {
         Expression expr;
-        if (MatchAny('+', '-', '~', '!') || _lookahead.Type == TokenType.Keyword && MatchUnaryKeyword((string) _lookahead.Value!))
+        if (MatchAny('+', '-', '~', '!'))
         {
             expr = ParseBasicUnaryExpression();
         }
@@ -2179,9 +1630,6 @@ public partial class JavaScriptParser
         _context.IsBindingElement = false;
         return unaryExpr;
     }
-
-    [StringMatcher("delete", "void", "typeof")]
-    private partial bool MatchUnaryKeyword(string input);
 
     private static BinaryExpression CreateBinaryExpression(string op, Expression left, Expression right)
     {
@@ -2274,8 +1722,6 @@ public partial class JavaScriptParser
 
                 case "==":
                 case "!=":
-                case "===":
-                case "!==":
                     prec = 11;
                     break;
 
@@ -2288,7 +1734,6 @@ public partial class JavaScriptParser
 
                 case "<<":
                 case ">>":
-                case ">>>":
                     prec = 13;
                     break;
 
@@ -2685,20 +2130,6 @@ public partial class JavaScriptParser
                         TolerateError(Messages.InvalidLHSInAssignment);
                     }
 
-                    if (_context.Strict && expr.Type == Nodes.Identifier)
-                    {
-                        var id = expr.As<Identifier>();
-                        if (Scanner.IsRestrictedWord(id.Name))
-                        {
-                            ThrowUnexpectedToken(token, Messages.StrictLHSAssignment);
-                        }
-
-                        if (Scanner.IsStrictModeReservedWord(id.Name))
-                        {
-                            ThrowUnexpectedToken(token, Messages.StrictReservedWord);
-                        }
-                    }
-
                     Node left;
 
                     if (!Match("="))
@@ -2784,46 +2215,11 @@ public partial class JavaScriptParser
         {
             switch ((string?) _lookahead.Value)
             {
-                case "export":
-                    if (!_context.IsModule)
-                    {
-                        ThrowUnexpectedToken(_lookahead, Messages.IllegalExportDeclaration);
-                    }
-
-                    statement = ParseExportDeclaration();
-                    break;
-
                 case "import":
-                    if (MatchImportCall())
-                    {
-                        statement = ParseExpressionStatement();
-                    }
-                    else if (MatchImportMeta())
-                    {
-                        statement = ParseStatement();
-                    }
-                    else
-                    {
-                        if (!_context.IsModule)
-                        {
-                            ThrowUnexpectedToken(_lookahead, Messages.IllegalImportDeclaration);
-                        }
-
-                        statement = ParseImportDeclaration();
-                    }
-
-                    break;
-                case "const":
-                    statement = ParseLexicalDeclaration();
+                    statement = ParseImportDeclaration();
                     break;
                 case "function":
                     statement = ParseFunctionDeclaration();
-                    break;
-                case "class":
-                    statement = ParseClassDeclaration();
-                    break;
-                case "let":
-                    statement = IsLexicalDeclaration() ? ParseLexicalDeclaration() : ParseStatement();
                     break;
                 default:
                     statement = ParseStatement();
@@ -2874,14 +2270,6 @@ public partial class JavaScriptParser
         var id = ParsePattern(ref parameters, kind);
 
         _parseVariableBindingParameters = parameters;
-
-        if (_context.Strict && id.Type == Nodes.Identifier)
-        {
-            if (Scanner.IsRestrictedWord(id.As<Identifier>().Name))
-            {
-                TolerateError(Messages.StrictVarName);
-            }
-        }
 
         Expression? init = null;
         if (kind == VariableDeclarationKind.Const)
@@ -2935,18 +2323,6 @@ public partial class JavaScriptParser
                next.Type == TokenType.Keyword && (string?) next.Value == "yield";
     }
 
-    private VariableDeclaration ParseLexicalDeclaration()
-    {
-        var node = CreateNode();
-        var kindString = (string?) NextToken().Value;
-        var kind = ParseVariableDeclarationKind(kindString);
-        //assert(kind == "let" || kind == "const", 'Lexical declaration must be either var or const');
-
-        var declarations = ParseBindingList(kind, inFor: false);
-        ConsumeSemicolon();
-
-        return Finalize(node, new VariableDeclaration(declarations, kind));
-    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private VariableDeclarationKind ParseVariableDeclarationKind(string? kindString)
@@ -3009,55 +2385,6 @@ public partial class JavaScriptParser
         return Finalize(node, new ArrayPattern(NodeList.From(ref elements)));
     }
 
-    private Property ParsePropertyPattern(ref ArrayList<Token> parameters, VariableDeclarationKind? kind)
-    {
-        var node = CreateNode();
-
-        var computed = false;
-        var shorthand = false;
-        var method = false;
-
-        Expression key;
-        Node value;
-
-        if (_lookahead.Type == TokenType.Identifier)
-        {
-            var keyToken = _lookahead;
-            key = ParseVariableIdentifier();
-            if (Match("="))
-            {
-                parameters.Push(keyToken);
-                shorthand = true;
-                NextToken();
-                var previousIsAssignmentTarget = _context.IsAssignmentTarget;
-                _context.IsAssignmentTarget = true;
-                var expr = ParseAssignmentExpression();
-                _context.IsAssignmentTarget = previousIsAssignmentTarget;
-                value = Finalize(StartNode(keyToken), new AssignmentPattern(key, expr));
-            }
-            else if (!Match(":"))
-            {
-                parameters.Push(keyToken);
-                shorthand = true;
-                value = key;
-            }
-            else
-            {
-                Expect(":");
-                value = ParsePatternWithDefault(ref parameters, kind);
-            }
-        }
-        else
-        {
-            computed = Match("[");
-            key = ParseObjectPropertyKey();
-            Expect(":");
-            value = ParsePatternWithDefault(ref parameters, kind);
-        }
-
-        return Finalize(node, new Property(PropertyKind.Init, key, computed, value, method, shorthand));
-    }
-
     private RestElement ParseRestProperty(ref ArrayList<Token> parameters, VariableDeclarationKind? kind)
     {
         var node = CreateNode();
@@ -3076,26 +2403,6 @@ public partial class JavaScriptParser
         return Finalize(node, new RestElement(arg));
     }
 
-    private ObjectPattern ParseObjectPattern(ref ArrayList<Token> parameters, VariableDeclarationKind? kind)
-    {
-        var node = CreateNode();
-        var properties = new ArrayList<Node>();
-
-        Expect("{");
-        while (!Match("}"))
-        {
-            properties.Push(Match("...") ? ParseRestProperty(ref parameters, kind) : ParsePropertyPattern(ref parameters, kind));
-            if (!Match("}"))
-            {
-                Expect(",");
-            }
-        }
-
-        Expect("}");
-
-        return Finalize(node, new ObjectPattern(NodeList.From(ref properties)));
-    }
-
     private Node ParsePattern(ref ArrayList<Token> parameters, VariableDeclarationKind? kind = null)
     {
         Node pattern;
@@ -3103,10 +2410,6 @@ public partial class JavaScriptParser
         if (Match("["))
         {
             pattern = ParseArrayPattern(ref parameters, kind);
-        }
-        else if (Match("{"))
-        {
-            pattern = ParseObjectPattern(ref parameters, kind);
         }
         else
         {
@@ -3161,17 +2464,10 @@ public partial class JavaScriptParser
         }
         else if (token.Type != TokenType.Identifier)
         {
-            if (_context.Strict && token.Type == TokenType.Keyword && Scanner.IsStrictModeReservedWord((string) token.Value!))
+            var stringValue = token.Value as string;
+            if (_context.Strict || stringValue == null || stringValue != "let" || kind != VariableDeclarationKind.Var)
             {
-                ThrowUnexpectedToken(token, Messages.StrictReservedWord);
-            }
-            else
-            {
-                var stringValue = token.Value as string;
-                if (_context.Strict || stringValue == null || stringValue != "let" || kind != VariableDeclarationKind.Var)
-                {
-                    ThrowUnexpectedToken(token);
-                }
+                ThrowUnexpectedToken(token);
             }
         }
         else if (_context.IsAsync && !allowAwaitKeyword && token.Type == TokenType.Identifier && (string?) token.Value == "await")
@@ -3192,15 +2488,6 @@ public partial class JavaScriptParser
 
         var id = ParsePattern(ref parameters, VariableDeclarationKind.Var);
         _parseVariableBindingParameters = parameters;
-
-        if (_context.Strict && id.Type == Nodes.Identifier)
-        {
-            var name = id.As<Identifier>().Name;
-            if (Scanner.IsRestrictedWord(name))
-            {
-                ThrowError(Messages.StrictVarName);
-            }
-        }
 
         Expression? init = null;
         if (Match("="))
@@ -3451,62 +2738,6 @@ public partial class JavaScriptParser
                     Expect(";");
                 }
             }
-            else if (MatchKeyword("const") || MatchKeyword("let"))
-            {
-                var initNode = CreateNode();
-                var kindString = (string?) NextToken().Value;
-                var kind = ParseVariableDeclarationKind(kindString);
-                if (!_context.Strict && (string?) _lookahead.Value == "in")
-                {
-                    if (@await)
-                    {
-                        TolerateUnexpectedToken(_lookahead);
-                    }
-
-                    left = Finalize(initNode, new Identifier(kindString!));
-                    NextToken();
-                    right = ParseExpression();
-                    init = null;
-                }
-                else
-                {
-                    var previousAllowIn = _context.AllowIn;
-                    _context.AllowIn = false;
-                    var declarations = ParseBindingList(kind, inFor: true);
-                    _context.AllowIn = previousAllowIn;
-
-                    if (declarations.Count == 1 && declarations[0]!.Init == null && MatchKeyword("in"))
-                    {
-                        if (@await)
-                        {
-                            TolerateUnexpectedToken(_lookahead);
-                        }
-
-                        left = Finalize(initNode, new VariableDeclaration(declarations, kind));
-                        NextToken();
-                        right = ParseExpression();
-                        init = null;
-                    }
-                    else if (declarations.Count == 1 && declarations[0]!.Init == null && MatchContextualKeyword("of"))
-                    {
-                        left = Finalize(initNode, new VariableDeclaration(declarations, kind));
-                        NextToken();
-                        right = ParseAssignmentExpression();
-                        init = null;
-                        forIn = false;
-                    }
-                    else
-                    {
-                        if (@await)
-                        {
-                            TolerateUnexpectedToken(_lookahead);
-                        }
-
-                        ConsumeSemicolon();
-                        init = Finalize(initNode, new VariableDeclaration(declarations, kind));
-                    }
-                }
-            }
             else
             {
                 var initStartToken = _lookahead;
@@ -3696,36 +2927,6 @@ public partial class JavaScriptParser
         return Finalize(node, new ReturnStatement(argument));
     }
 
-    // https://tc39.github.io/ecma262/#sec-with-statement
-
-    private WithStatement ParseWithStatement()
-    {
-        if (_context.Strict)
-        {
-            ThrowError(Messages.StrictModeWith);
-        }
-
-        var node = CreateNode();
-        Statement body;
-
-        ExpectKeyword("with");
-        Expect("(");
-        var obj = ParseExpression();
-
-        if (!Match(")") && _tolerant)
-        {
-            TolerateUnexpectedToken(NextToken());
-            body = Finalize(CreateNode(), new EmptyStatement());
-        }
-        else
-        {
-            Expect(")");
-            body = ParseStatement();
-        }
-
-        return Finalize(node, new WithStatement(obj, body));
-    }
-
     // https://tc39.github.io/ecma262/#sec-switch-statement
 
     private SwitchCase ParseSwitchCase()
@@ -3823,17 +3024,7 @@ public partial class JavaScriptParser
             }
 
             Statement body;
-            if (MatchKeyword("class"))
-            {
-                TolerateUnexpectedToken(_lookahead);
-                body = ParseClassDeclaration();
-            }
-            else if (Match("@"))
-            {
-                TolerateUnexpectedToken(_lookahead);
-                body = ParseDecoratedClassDeclaration();
-            }
-            else if (MatchKeyword("function"))
+            if (MatchKeyword("function"))
             {
                 var token = _lookahead;
                 var declaration = ParseFunctionDeclaration();
@@ -3920,14 +3111,6 @@ public partial class JavaScriptParser
 
             _parseVariableBindingParameters = parameters;
 
-            if (_context.Strict && param.Type == Nodes.Identifier)
-            {
-                if (Scanner.IsRestrictedWord(param.As<Identifier>().Name))
-                {
-                    ThrowError(Messages.StrictCatchVariable);
-                }
-            }
-
             Expect(")");
         }
 
@@ -3959,16 +3142,6 @@ public partial class JavaScriptParser
         return Finalize(node, new TryStatement(block, handler, finalizer));
     }
 
-    // https://tc39.github.io/ecma262/#sec-debugger-statement
-
-    private DebuggerStatement ParseDebuggerStatement()
-    {
-        var node = CreateNode();
-        ExpectKeyword("debugger");
-        ConsumeSemicolon();
-        return Finalize(node, new DebuggerStatement());
-    }
-
     // https://tc39.github.io/ecma262/#sec-ecmascript-language-statements-and-declarations
 
     private Statement ParseStatement()
@@ -3992,15 +3165,9 @@ public partial class JavaScriptParser
                     case "{":
                         statement = ParseBlock();
                         break;
-                    case "@":
-                        statement = ParseDecoratedClassDeclaration();
-                        break;
                     case ";":
                         statement = ParseEmptyStatement();
                         break;
-                    case "#!":
-                        return ThrowUnexpectedToken<Statement>(_lookahead);
-                    case "#":
                     case "(":
                     default:
                         statement = ParseExpressionStatement();
@@ -4021,9 +3188,6 @@ public partial class JavaScriptParser
                         break;
                     case "continue":
                         statement = ParseContinueStatement();
-                        break;
-                    case "debugger":
-                        statement = ParseDebuggerStatement();
                         break;
                     case "do":
                         statement = ParseDoWhileStatement();
@@ -4055,9 +3219,6 @@ public partial class JavaScriptParser
                     case "while":
                         statement = ParseWhileStatement();
                         break;
-                    case "with":
-                        statement = ParseWithStatement();
-                        break;
                     default:
                         statement = ParseExpressionStatement();
                         break;
@@ -4070,6 +3231,56 @@ public partial class JavaScriptParser
         }
 
         return statement;
+    }
+
+    private ExpressionStatement ParseDirective()
+    {
+        var token = _lookahead;
+        string? directive = null;
+
+        var node = CreateNode();
+        var expr = ParseExpression();
+        if (expr.Type == Nodes.Literal)
+        {
+            directive = _scanner._source.Between(token.Start + 1, token.End - 1).ToInternedString(ref _scanner._stringPool);
+        }
+
+        ConsumeSemicolon();
+
+        return Finalize(node, directive != null ? new Directive(expr, directive) : new ExpressionStatement(expr));
+    }
+
+    private ArrayList<Statement> ParseDirectivePrologues()
+    {
+        Token? firstRestricted = null;
+
+        var body = new ArrayList<Statement>();
+        while (true)
+        {
+            var token = _lookahead;
+
+            if (firstRestricted == null && token.OctalKind != LegacyOctalKind.None)
+            {
+                firstRestricted = token;
+            }
+
+            if (token.Type != TokenType.StringLiteral)
+            {
+                break;
+            }
+
+            var statement = ParseDirective();
+            body.Push(statement);
+        }
+
+        if (_context.Strict && firstRestricted != null)
+        {
+            TolerateUnexpectedToken(firstRestricted.Value, firstRestricted.Value.OctalKind == LegacyOctalKind.Escaped8or9
+                ? Messages.StrictEscape89
+                : Messages.StrictOctalLiteral);
+        }
+
+        return body;
     }
 
     // https://tc39.github.io/ecma262/#sec-function-definitions
@@ -4122,12 +3333,6 @@ public partial class JavaScriptParser
         var key = name;
         if (_context.Strict)
         {
-            if (name is not null && Scanner.IsRestrictedWord(name))
-            {
-                options.Stricted = new Token(); // Marker token
-                options.Message = Messages.StrictParamName;
-            }
-
             if (options.ParamSetContains(key))
             {
                 options.Stricted = new Token(); // Marker token
@@ -4136,17 +3341,7 @@ public partial class JavaScriptParser
         }
         else if (options.FirstRestricted == null)
         {
-            if (name is not null && Scanner.IsRestrictedWord(name))
-            {
-                options.FirstRestricted = new Token(); // Marker token
-                options.Message = Messages.StrictParamName;
-            }
-            else if (name is not null && Scanner.IsStrictModeReservedWord(name))
-            {
-                options.FirstRestricted = new Token(); // Marker token
-                options.Message = Messages.StrictReservedWord;
-            }
-            else if (options.ParamSetContains(key))
+            if (options.ParamSetContains(key))
             {
                 options.Stricted = new Token(); // Marker token
                 options.HasDuplicateParameterNames = true;
@@ -4161,12 +3356,6 @@ public partial class JavaScriptParser
         var key = name;
         if (_context.Strict)
         {
-            if (name is not null && Scanner.IsRestrictedWord(name))
-            {
-                options.Stricted = param;
-                options.Message = Messages.StrictParamName;
-            }
-
             if (options.ParamSetContains(key))
             {
                 options.Stricted = param;
@@ -4175,17 +3364,7 @@ public partial class JavaScriptParser
         }
         else if (options.FirstRestricted == null)
         {
-            if (name is not null && Scanner.IsRestrictedWord(name))
-            {
-                options.FirstRestricted = param;
-                options.Message = Messages.StrictParamName;
-            }
-            else if (name is not null && Scanner.IsStrictModeReservedWord(name))
-            {
-                options.FirstRestricted = param;
-                options.Message = Messages.StrictReservedWord;
-            }
-            else if (options.ParamSetContains(key))
+            if (options.ParamSetContains(key))
             {
                 options.Stricted = param;
                 options.HasDuplicateParameterNames = true;
@@ -4323,28 +3502,6 @@ public partial class JavaScriptParser
         {
             var token = _lookahead;
             id = ParseVariableIdentifier();
-
-            var tokenValue = (string?) token.Value;
-            if (_context.Strict)
-            {
-                if (tokenValue is not null && Scanner.IsRestrictedWord(tokenValue))
-                {
-                    ThrowUnexpectedToken(token, Messages.StrictFunctionName);
-                }
-            }
-            else
-            {
-                if (tokenValue is not null && Scanner.IsRestrictedWord(tokenValue))
-                {
-                    firstRestricted = token;
-                    message = Messages.StrictFunctionName;
-                }
-                else if (tokenValue is not null && Scanner.IsStrictModeReservedWord(tokenValue))
-                {
-                    firstRestricted = token;
-                    message = Messages.StrictReservedWord;
-                }
-            }
         }
 
         var previousInClassStaticBlock = _context.InClassStaticBlock;
@@ -4423,27 +3580,6 @@ public partial class JavaScriptParser
             id = !_context.Strict && !isGenerator && MatchKeyword("yield")
                 ? ParseIdentifierName()
                 : ParseVariableIdentifier();
-
-            if (_context.Strict)
-            {
-                if (token.Value is not null && Scanner.IsRestrictedWord((string) token.Value))
-                {
-                    ThrowUnexpectedToken(token, Messages.StrictFunctionName);
-                }
-            }
-            else
-            {
-                if (token.Value is not null && Scanner.IsRestrictedWord((string) token.Value))
-                {
-                    firstRestricted = token;
-                    message = Messages.StrictFunctionName;
-                }
-                else if (token.Value is not null && Scanner.IsStrictModeReservedWord((string) token.Value))
-                {
-                    firstRestricted = token;
-                    message = Messages.StrictReservedWord;
-                }
-            }
         }
 
         var formalParameters = ParseFormalParameters(firstRestricted);
@@ -4479,74 +3615,6 @@ public partial class JavaScriptParser
         return Finalize(node, new FunctionExpression((Identifier?) id, parameters, body, isGenerator, hasStrictDirective, isAsync));
     }
 
-    // https://tc39.github.io/ecma262/#sec-directive-prologues-and-the-use-strict-directive
-
-    private ExpressionStatement ParseDirective()
-    {
-        var token = _lookahead;
-        string? directive = null;
-
-        var node = CreateNode();
-        var expr = ParseExpression();
-        if (expr.Type == Nodes.Literal)
-        {
-            directive = _scanner._source.Between(token.Start + 1, token.End - 1).ToInternedString(ref _scanner._stringPool);
-        }
-
-        ConsumeSemicolon();
-
-        return Finalize(node, directive != null ? new Directive(expr, directive) : new ExpressionStatement(expr));
-    }
-
-    private ArrayList<Statement> ParseDirectivePrologues()
-    {
-        Token? firstRestricted = null;
-
-        var body = new ArrayList<Statement>();
-        while (true)
-        {
-            var token = _lookahead;
-
-            if (firstRestricted == null && token.OctalKind != LegacyOctalKind.None)
-            {
-                firstRestricted = token;
-            }
-
-            if (token.Type != TokenType.StringLiteral)
-            {
-                break;
-            }
-
-            var statement = ParseDirective();
-            body.Push(statement);
-
-            var directive = (statement as Directive)?.Value;
-
-            if (directive == null)
-            {
-                break;
-            }
-
-            if (directive == "use strict")
-            {
-                _context.Strict = true;
-                if (!_context.AllowStrictDirective)
-                {
-                    TolerateUnexpectedToken(token, Messages.IllegalLanguageModeDirective);
-                }
-            }
-        }
-
-        if (_context.Strict && firstRestricted != null)
-        {
-            TolerateUnexpectedToken(firstRestricted.Value, firstRestricted.Value.OctalKind == LegacyOctalKind.Escaped8or9
-                ? Messages.StrictEscape89
-                : Messages.StrictOctalLiteral);
-        }
-
-        return body;
-    }
-
     // https://tc39.github.io/ecma262/#sec-method-definitions
 
     private static bool QualifiedPropertyName(in Token token)
@@ -4562,39 +3630,6 @@ public partial class JavaScriptParser
             TokenType.Punctuator => "[".Equals(token.Value) || "#".Equals(token.Value),
             _ => false
         };
-    }
-
-    private FunctionExpression ParseGetterMethod()
-    {
-        var method = ParseMethod(isAsync: false, generator: false);
-        if (method.Params.Count > 0)
-        {
-            TolerateError(Messages.BadGetterArity);
-        }
-
-        return method;
-    }
-
-    private FunctionExpression ParseSetterMethod()
-    {
-        var method = ParseMethod(isAsync: false, generator: false);
-
-        ref readonly var parameters = ref method.Params;
-        if (parameters.Count != 1)
-        {
-            TolerateError(Messages.BadSetterArity);
-        }
-        else if (parameters[0] is RestElement)
-        {
-            TolerateError(Messages.BadSetterRestParameter);
-        }
-
-        return method;
-    }
-
-    private FunctionExpression ParseGeneratorMethod(bool isAsync)
-    {
-        return ParseMethod(isAsync, generator: true);
     }
 
     private FunctionExpression ParseMethod(bool isAsync, bool generator)
@@ -4685,503 +3720,6 @@ public partial class JavaScriptParser
         return Finalize(node, new YieldExpression(argument, delegat));
     }
 
-    // https://tc39.github.io/ecma262/#sec-class-definitions
-
-    private StaticBlock ParseStaticBlock()
-    {
-        var node = CreateNode();
-
-        Expect("{");
-
-        var previousInClassStaticBlock = _context.InClassStaticBlock;
-        var previousAllowSuperAccess = _context.AllowSuperAccess;
-        var previousAllowSuperCall = _context.AllowSuperCall;
-        _context.InClassStaticBlock = true;
-        _context.AllowSuperAccess = true;
-        _context.AllowSuperCall = false;
-
-        var block = new ArrayList<Statement>();
-        while (true)
-        {
-            if (Match("}"))
-            {
-                break;
-            }
-
-            block.Add(ParseStatementListItem());
-        }
-
-        _context.AllowSuperAccess = previousAllowSuperAccess;
-        _context.AllowSuperCall = previousAllowSuperCall;
-        _context.InClassStaticBlock = previousInClassStaticBlock;
-
-        Expect("}");
-
-        return Finalize(node, new StaticBlock(NodeList.From(ref block)));
-    }
-
-    private Decorator ParseDecorator()
-    {
-        var node = CreateNode();
-
-        Expect("@");
-        var previousStrict = _context.Strict;
-        var previousAllowYield = _context.AllowYield;
-        var previousIsAsync = _context.IsAsync;
-        _context.Strict = false;
-        _context.AllowYield = true;
-        _context.IsAsync = false;
-
-        var previousMemberAccessContext = _context.MemberAccessContext;
-        _context.MemberAccessContext = MemberAccessContext.Decorator;
-        var expression = IsolateCoverGrammar(_parseLeftHandSideExpressionAllowCall);
-        _context.MemberAccessContext = previousMemberAccessContext;
-
-        _context.Strict = previousStrict;
-        _context.AllowYield = previousAllowYield;
-        _context.IsAsync = previousIsAsync;
-
-        if (Match(";"))
-        {
-            ThrowError(Messages.NoSemicolonAfterDecorator);
-        }
-
-        return Finalize(node, new Decorator(expression));
-    }
-
-    private ArrayList<Decorator> ParseDecorators()
-    {
-        var decorators = new ArrayList<Decorator>();
-
-        while (Match("@"))
-        {
-            decorators.Add(ParseDecorator());
-        }
-
-        return decorators;
-    }
-
-    private ClassElement ParseClassElement(bool hasSuperClass, ref bool hasConstructor)
-    {
-        Token token;
-        var node = CreateNode();
-
-        var decorators = ParseDecorators();
-        Expression? key;
-        Expression? value;
-        var kind = PropertyKind.None;
-        var computed = false;
-        var isStatic = false;
-        var isAsync = false;
-        var isGenerator = false;
-        var isPrivate = false;
-        var isAccessor = false;
-
-        var escapedStatic = false;
-
-        isGenerator = Match("*");
-        if (isGenerator)
-        {
-            NextToken();
-            kind = PropertyKind.Method;
-            goto ParseKey;
-        }
-
-        if (_lookahead.Type is not (TokenType.Identifier or TokenType.Keyword))
-        {
-            goto ParseKey;
-        }
-
-        if ((string?) _lookahead.Value == "static")
-        {
-            token = _lookahead;
-            key = ParseObjectPropertyKey();
-
-            if (Match("{"))
-            {
-                return ParseStaticBlock();
-            }
-
-            isGenerator = Match("*");
-            if (isGenerator)
-            {
-                NextToken();
-                isStatic = true;
-                escapedStatic = token.IsEscaped("static");
-                kind = PropertyKind.Method;
-                goto ParseKey;
-            }
-
-            if (!QualifiedPropertyName(_lookahead))
-            {
-                goto ParseValue;
-            }
-
-            escapedStatic = token.IsEscaped("static");
-            isStatic = true;
-        }
-
-        if (_lookahead.Type is not (TokenType.Identifier or TokenType.Keyword))
-        {
-            goto ParseKey;
-        }
-
-        if (MatchContextualKeyword("async") && _lookahead.IsEscaped("async"))
-        {
-            TolerateError(Messages.InvalidEscapedReservedWord);
-        }
-
-        switch ((string?) _lookahead.Value)
-        {
-            case "async":
-                token = _lookahead;
-                key = ParseObjectPropertyKey();
-
-                if (_hasLineTerminator)
-                {
-                    goto ParseValue;
-                }
-
-                isGenerator = Match("*");
-                if (isGenerator)
-                {
-                    NextToken();
-                    isAsync = true;
-                    kind = PropertyKind.Method;
-                    goto ParseKey;
-                }
-
-                if (!QualifiedPropertyName(_lookahead))
-                {
-                    goto ParseValue;
-                }
-
-                isAsync = true;
-                break;
-
-            case "get":
-            case "set":
-                token = _lookahead;
-                key = ParseObjectPropertyKey();
-
-                if (!QualifiedPropertyName(_lookahead))
-                {
-                    goto ParseValue;
-                }
-
-                kind = ((string) token.Value!)[0] == 'g' ? PropertyKind.Get : PropertyKind.Set;
-                break;
-
-            case "accessor":
-                token = _lookahead;
-                key = ParseObjectPropertyKey();
-
-                if (!QualifiedPropertyName(_lookahead) || _hasLineTerminator)
-                {
-                    goto ParseValue;
-                }
-
-                isAccessor = true;
-                kind = PropertyKind.Property;
-                break;
-        }
-
-ParseKey:
-        token = _lookahead;
-        computed = Match("[");
-        isPrivate = Match("#");
-        key = !isPrivate ? ParseObjectPropertyKey() : ParsePrivateIdentifier();
-
-ParseValue:
-        if (kind == PropertyKind.None)
-        {
-            kind = Match("(") ? PropertyKind.Method : PropertyKind.Property;
-        }
-
-        if (isStatic && escapedStatic)
-        {
-            TolerateError(Messages.InvalidEscapedReservedWord);
-        }
-
-        if (!computed && !isPrivate)
-        {
-            if (isStatic)
-            {
-                if (IsPropertyKey(key, "prototype"))
-                {
-                    ThrowUnexpectedToken(token, Messages.StaticPrototype);
-                }
-                else if (IsPropertyKey(key, "constructor"))
-                {
-                    // Interestingly, `static get constructor() {}`, etc. are allowed...
-                    if (kind == PropertyKind.Property && !isAccessor)
-                    {
-                        ThrowUnexpectedToken(token, Messages.ConstructorIsField);
-                    }
-                }
-            }
-            else
-            {
-                if (IsPropertyKey(key, "constructor"))
-                {
-                    if (kind == PropertyKind.Property && !isAccessor)
-                    {
-                        ThrowUnexpectedToken(token, Messages.ConstructorIsField);
-                    }
-                    else if (kind is PropertyKind.Get or PropertyKind.Set || kind == PropertyKind.Property && isAccessor)
-                    {
-                        ThrowUnexpectedToken(token, Messages.ConstructorIsAccessor);
-                    }
-                    else if (isGenerator)
-                    {
-                        TolerateUnexpectedToken(token, Messages.ConstructorIsGenerator);
-                    }
-                    else if (isAsync)
-                    {
-                        TolerateUnexpectedToken(token, Messages.ConstructorIsAsync);
-                    }
-
-                    if (hasConstructor)
-                    {
-                        ThrowUnexpectedToken(token, Messages.DuplicateConstructor);
-                    }
-                    else
-                    {
-                        hasConstructor = true;
-                    }
-
-                    kind = PropertyKind.Constructor;
-                }
-            }
-        }
-
-        switch (kind)
-        {
-            case PropertyKind.Get:
-            case PropertyKind.Set:
-                value = kind == PropertyKind.Get ? ParseGetterMethod() : ParseSetterMethod();
-                return Finalize(node, new MethodDefinition(key, computed, (FunctionExpression) value!, kind, isStatic, NodeList.From(ref decorators)));
-
-            case PropertyKind.Constructor:
-            case PropertyKind.Method:
-                value = !isGenerator
-                    ? ParsePropertyMethodFunction(isAsync, isGenerator, allowSuperCall: kind == PropertyKind.Constructor && hasSuperClass)
-                    : ParseGeneratorMethod(isAsync);
-                return Finalize(node, new MethodDefinition(key!, computed, (FunctionExpression) value!, kind, isStatic, NodeList.From(ref decorators)));
-
-            case PropertyKind.Property:
-                if (Match("="))
-                {
-                    NextToken();
-                    var previousAllowSuperAccess = _context.AllowSuperAccess;
-                    var previousAllowSuperCall = _context.AllowSuperCall;
-                    var previousInClassFieldInit = _context.InClassFieldInit;
-                    _context.AllowSuperAccess = true;
-                    _context.AllowSuperCall = false;
-                    _context.InClassFieldInit = true;
-                    value = IsolateCoverGrammar(_parseAssignmentExpression);
-                    _context.InClassFieldInit = previousInClassFieldInit;
-                    _context.AllowSuperAccess = previousAllowSuperAccess;
-                    _context.AllowSuperCall = previousAllowSuperCall;
-                }
-                else
-                {
-                    value = null;
-                }
-
-                ConsumeSemicolon();
-
-                return !isAccessor
-                    ? Finalize(node, new PropertyDefinition(key!, computed, value, isStatic, NodeList.From(ref decorators)))
-                    : Finalize(node, new AccessorProperty(key!, computed, value, isStatic, NodeList.From(ref decorators)));
-
-            default:
-                return ThrowError<ClassElement>("Unknown property kind '{0}'", kind);
-        }
-    }
-
-    private ArrayList<ClassElement> ParseClassElementList(bool hasSuperClass)
-    {
-        var body = new ArrayList<ClassElement>();
-        var hasConstructor = false;
-
-        Expect("{");
-        while (!Match("}"))
-        {
-            if (Match(";"))
-            {
-                NextToken();
-            }
-            else
-            {
-                body.Push(ParseClassElement(hasSuperClass, ref hasConstructor));
-            }
-        }
-
-        Expect("}");
-
-        return body;
-    }
-
-    private ClassBody ParseClassBody(bool hasSuperClass)
-    {
-        var node = CreateNode();
-        var previousInClassBody = _context.InClassBody;
-        _context.InClassBody = true;
-        var elementList = ParseClassElementList(hasSuperClass);
-        _context.InClassBody = previousInClassBody;
-
-        return Finalize(node, new ClassBody(NodeList.From(ref elementList)));
-    }
-
-    private ClassDeclaration ParseClassDeclarationCore(in Marker node, bool identifierIsOptional = false)
-    {
-        var previousStrict = _context.Strict;
-        _context.Strict = true;
-
-        ExpectKeyword("class");
-
-        var id = identifierIsOptional && _lookahead.Type != TokenType.Identifier
-            ? null
-            : ParseVariableIdentifier();
-
-        Expression? superClass = null;
-        if (MatchKeyword("extends"))
-        {
-            NextToken();
-            var previousMemberAccessContext = _context.MemberAccessContext;
-            _context.MemberAccessContext = MemberAccessContext.Unknown;
-            superClass = IsolateCoverGrammar(_parseLeftHandSideExpressionAllowCall);
-            _context.MemberAccessContext = previousMemberAccessContext;
-        }
-
-        var classBody = ParseClassBody(hasSuperClass: superClass is not null);
-        _context.Strict = previousStrict;
-
-        return Finalize(node, new ClassDeclaration(id, superClass, classBody, NodeList.From(ref _context.Decorators)));
-    }
-
-    private ClassDeclaration ParseClassDeclaration(bool identifierIsOptional = false)
-    {
-        return ParseClassDeclarationCore(CreateNode(), identifierIsOptional);
-    }
-
-    private ClassDeclaration ParseDecoratedClassDeclaration(bool identifierIsOptional = false)
-    {
-        var node = CreateNode();
-
-        var previousDecorators = _context.Decorators;
-        _context.Decorators = ParseDecorators();
-        var declaration = ParseClassDeclarationCore(node, identifierIsOptional);
-        _context.Decorators = previousDecorators;
-
-        return declaration;
-    }
-
-    private ClassExpression ParseClassExpression()
-    {
-        var node = CreateNode();
-
-        var previousStrict = _context.Strict;
-        _context.Strict = true;
-
-        ExpectKeyword("class");
-        var id = _lookahead.Type == TokenType.Identifier
-            ? ParseVariableIdentifier()
-            : null;
-
-        Expression? superClass = null;
-        if (MatchKeyword("extends"))
-        {
-            NextToken();
-            var previousMemberAccessContext = _context.MemberAccessContext;
-            _context.MemberAccessContext = MemberAccessContext.Unknown;
-            superClass = IsolateCoverGrammar(_parseLeftHandSideExpressionAllowCall);
-            _context.MemberAccessContext = previousMemberAccessContext;
-        }
-
-        var classBody = ParseClassBody(hasSuperClass: superClass is not null);
-        _context.Strict = previousStrict;
-
-        return Finalize(node, new ClassExpression(id, superClass, classBody, NodeList.From(ref _context.Decorators)));
-    }
-
-    // https://tc39.github.io/ecma262/#sec-imports
-
-    private Literal ParseModuleSpecifier()
-    {
-        var node = CreateNode();
-
-        if (_lookahead.Type != TokenType.StringLiteral)
-        {
-            ThrowError(Messages.InvalidModuleSpecifier);
-        }
-
-        var token = NextToken();
-        var raw = GetTokenRaw(token);
-        return Finalize(node, new Literal((string) token.Value!, raw));
-    }
-
-    private ArrayList<ImportAttribute> ParseImportAttributes()
-    {
-        var attributes = new ArrayList<ImportAttribute>();
-        if (!MatchKeyword("with"))
-        {
-            return attributes;
-        }
-
-        NextToken();
-        Expect("{");
-
-        var parameterSet = new HashSet<string?>();
-        while (!Match("}"))
-        {
-            var importAttribute = ParseImportAttribute();
-
-            string? key = string.Empty;
-            switch (importAttribute.Key)
-            {
-                case Identifier identifier:
-                    key = identifier.Name;
-                    break;
-                case Literal literal:
-                    key = literal.StringValue;
-                    break;
-            }
-
-            if (!parameterSet.Add(key))
-            {
-                ThrowError(Messages.DuplicateKeyInImportAttributes, key);
-            }
-
-            attributes.Add(importAttribute);
-            if (!Match("}"))
-            {
-                ExpectCommaSeparator();
-            }
-        }
-        Expect("}");
-        return attributes;
-    }
-
-    private ImportAttribute ParseImportAttribute()
-    {
-        var node = CreateNode();
-
-        Expression key = ParseObjectPropertyKey();
-        if (!Match(":"))
-        {
-            ThrowUnexpectedToken(NextToken());
-        }
-
-        NextToken();
-        var literalToken = NextToken();
-        var raw = GetTokenRaw(literalToken);
-        Literal value = Finalize(node, new Literal((string) literalToken.Value!, raw));
-
-        return Finalize(node, new ImportAttribute(key, value));
-    }
-
     // import {<foo as bar>} ...;
     private ImportSpecifier ParseImportSpecifier()
     {
@@ -5202,9 +3740,7 @@ ParseValue:
         }
         else
         {
-            imported = this._lookahead.Type == TokenType.StringLiteral
-                ? ParseModuleSpecifier()
-                : ParseIdentifierName();
+            imported = ParseIdentifierName();
 
             if (MatchContextualKeyword("as"))
             {
@@ -5277,260 +3813,60 @@ ParseValue:
 
         Literal src;
         var specifiers = new ArrayList<ImportDeclarationSpecifier>();
-        if (_lookahead.Type == TokenType.StringLiteral)
+
+        if (Match("*"))
         {
-            // import 'foo';
-            src = ParseModuleSpecifier();
+            // import * as foo
+            specifiers.Push(ParseImportNamespaceSpecifier());
         }
-        else
+        else if (IsIdentifierName(_lookahead) && !MatchKeyword("default"))
         {
-            if (Match("{"))
+            // import foo
+            specifiers.Push(ParseImportDefaultSpecifier());
+            if (Match(","))
             {
-                // import {bar}
-                specifiers.AddRange(ParseNamedImports());
-            }
-            else if (Match("*"))
-            {
-                // import * as foo
-                specifiers.Push(ParseImportNamespaceSpecifier());
-            }
-            else if (IsIdentifierName(_lookahead) && !MatchKeyword("default"))
-            {
-                // import foo
-                specifiers.Push(ParseImportDefaultSpecifier());
-                if (Match(","))
+                NextToken();
+                if (Match("*"))
                 {
-                    NextToken();
-                    if (Match("*"))
-                    {
-                        // import foo, * as foo
-                        specifiers.Push(ParseImportNamespaceSpecifier());
-                    }
-                    else if (Match("{"))
-                    {
-                        // import foo, {bar}
-                        specifiers.AddRange(ParseNamedImports());
-                    }
-                    else
-                    {
-                        ThrowUnexpectedToken(_lookahead);
-                    }
+                    // import foo, * as foo
+                    specifiers.Push(ParseImportNamespaceSpecifier());
                 }
-            }
-            else
-            {
-                ThrowUnexpectedToken(NextToken());
-            }
-
-            if (!MatchContextualKeyword("from"))
-            {
-                var message = _lookahead.Value != null ? Messages.UnexpectedToken : Messages.MissingFromClause;
-                ThrowError(message, _lookahead.Value);
-            }
-
-            NextToken();
-            src = ParseModuleSpecifier();
-        }
-
-        var attributes = ParseImportAttributes();
-        ConsumeSemicolon();
-
-        return Finalize(node, new ImportDeclaration(NodeList.From(ref specifiers), src, NodeList.From(ref attributes)));
-    }
-
-    // https://tc39.github.io/ecma262/#sec-exports
-
-    private ExportSpecifier ParseExportSpecifier()
-    {
-        var node = CreateNode();
-
-        Expression local = this._lookahead.Type == TokenType.StringLiteral
-            ? ParseModuleSpecifier()
-            : ParseIdentifierName();
-
-        var exported = local;
-        if (MatchContextualKeyword("as"))
-        {
-            NextToken();
-            exported = this._lookahead.Type == TokenType.StringLiteral
-                ? ParseModuleSpecifier()
-                : ParseIdentifierName();
-        }
-
-        return Finalize(node, new ExportSpecifier(local, exported));
-    }
-
-    private ExportDeclaration ParseExportDeclaration()
-    {
-        if (_context.InFunctionBody)
-        {
-            ThrowError(Messages.IllegalExportDeclaration);
-        }
-
-        var node = CreateNode();
-        ExpectKeyword("export");
-
-        ExportDeclaration exportDeclaration;
-        if (MatchKeyword("default"))
-        {
-            // export default ...
-            NextToken();
-            if (MatchKeyword("function"))
-            {
-                // export default function foo () {}
-                // export default function () {}
-                var declaration = ParseFunctionDeclaration(true);
-                exportDeclaration = Finalize(node, new ExportDefaultDeclaration(declaration));
-            }
-            else if (MatchKeyword("class"))
-            {
-                // export default class foo {}
-                var declaration = ParseClassDeclaration(true);
-                //var declaration = new ClassDeclaration(classExpression.Id, classExpression.SuperClass, classExpression.Body)
-                //{
-                //    Location = classExpression.Location,
-                //    Range = classExpression.Range
-                //};
-                exportDeclaration = Finalize(node, new ExportDefaultDeclaration(declaration));
-            }
-            else if (Match("@"))
-            {
-                // export default @abc class foo {}
-                var declaration = ParseDecoratedClassDeclaration(true);
-                exportDeclaration = Finalize(node, new ExportDefaultDeclaration(declaration));
-            }
-            else if (MatchContextualKeyword("async"))
-            {
-                // export default async function f () {}
-                // export default async function () {}
-                // export default async x => x
-                StatementListItem declaration;
-                if (MatchAsyncFunction())
+                else if (Match("{"))
                 {
-                    declaration = ParseFunctionDeclaration(true);
+                    // import foo, {bar}
+                    specifiers.AddRange(ParseNamedImports());
                 }
                 else
                 {
-                    declaration = ParseAssignmentExpression();
-                    ConsumeSemicolon();
+                    ThrowUnexpectedToken(_lookahead);
                 }
-                exportDeclaration = Finalize(node, new ExportDefaultDeclaration(declaration));
             }
-            else
-            {
-                if (MatchContextualKeyword("from"))
-                {
-                    ThrowError(Messages.UnexpectedToken, _lookahead.Value);
-                }
-
-                // export default {};
-                // export default [];
-                // export default (1 + 2);
-                var declaration = ParseAssignmentExpression();
-
-                ConsumeSemicolon();
-                exportDeclaration = Finalize(node, new ExportDefaultDeclaration(declaration));
-            }
-        }
-        else if (Match("*"))
-        {
-            // export * from 'foo';
-            NextToken();
-
-            //export * as ns from 'foo'
-            Expression? exported = null;
-            if (MatchContextualKeyword("as"))
-            {
-                NextToken();
-                exported = this._lookahead.Type == TokenType.StringLiteral
-                    ? ParseModuleSpecifier()
-                    : ParseIdentifierName();
-            }
-
-            if (!MatchContextualKeyword("from"))
-            {
-                var message = _lookahead.Value != null ? Messages.UnexpectedToken : Messages.MissingFromClause;
-                ThrowError(message, _lookahead.Value);
-            }
-
-            NextToken();
-            var src = ParseModuleSpecifier();
-            var attributes = ParseImportAttributes();
-            ConsumeSemicolon();
-            exportDeclaration = Finalize(node, new ExportAllDeclaration(src, exported, NodeList.From(ref attributes)));
-        }
-        else if (_lookahead.Type == TokenType.Keyword)
-        {
-            // export var f = 1;
-            StatementListItem declaration;
-            switch (_lookahead.Value)
-            {
-                case "let":
-                case "const":
-                    declaration = ParseLexicalDeclaration();
-                    break;
-                case "var":
-                case "class":
-                case "function":
-                    declaration = ParseStatementListItem();
-                    break;
-                default:
-                    declaration = ThrowUnexpectedToken<StatementListItem>(_lookahead);
-                    break;
-            }
-
-            exportDeclaration = Finalize(node, new ExportNamedDeclaration(declaration.As<Declaration>(), new NodeList<ExportSpecifier>(), null, new NodeList<ImportAttribute>()));
-        }
-        else if (MatchAsyncFunction())
-        {
-            var declaration = ParseFunctionDeclaration();
-            exportDeclaration = Finalize(node, new ExportNamedDeclaration(declaration, new NodeList<ExportSpecifier>(), null, new NodeList<ImportAttribute>()));
         }
         else
         {
-            var specifiers = new ArrayList<ExportSpecifier>();
-            Literal? source = null;
-            var isExportFromIdentifier = false;
-            ArrayList<ImportAttribute> attributes = new();
-
-            Expect("{");
-            while (!Match("}"))
-            {
-                isExportFromIdentifier = isExportFromIdentifier || MatchKeyword("default");
-                specifiers.Push(ParseExportSpecifier());
-                if (!Match("}"))
-                {
-                    Expect(",");
-                }
-            }
-
-            Expect("}");
-
-            if (MatchContextualKeyword("from"))
-            {
-                // export {default} from 'foo';
-                // export {foo} from 'foo';
-                NextToken();
-                source = ParseModuleSpecifier();
-                attributes = ParseImportAttributes();
-                ConsumeSemicolon();
-            }
-            else if (isExportFromIdentifier)
-            {
-                // export {default}; // missing fromClause
-                var message = _lookahead.Value != null ? Messages.UnexpectedToken : Messages.MissingFromClause;
-                ThrowError(message, _lookahead.Value);
-            }
-            else
-            {
-                // export {foo};
-                ConsumeSemicolon();
-            }
-
-            exportDeclaration = Finalize(node, new ExportNamedDeclaration(null, NodeList.From(ref specifiers), source, NodeList.From(ref attributes)));
+            ThrowUnexpectedToken(NextToken());
         }
 
-        return exportDeclaration;
+        NextToken();
+        src = ParseModuleSpecifier();
+
+        ConsumeSemicolon();
+
+        return Finalize(node, new ImportDeclaration(NodeList.From(ref specifiers), src));
+    }
+
+    private Literal ParseModuleSpecifier()
+    {
+        var node = CreateNode();
+
+        if (_lookahead.Type != TokenType.StringLiteral)
+        {
+            ThrowError(Messages.InvalidModuleSpecifier);
+        }
+
+        var token = NextToken();
+        var raw = GetTokenRaw(token);
+        return Finalize(node, new Literal((string) token.Value!, raw));
     }
 
     [DoesNotReturn]
@@ -5580,18 +3916,6 @@ ParseValue:
                     token.Type == TokenType.StringLiteral ? Messages.UnexpectedString :
                     token.Type == TokenType.Template ? Messages.UnexpectedTemplate :
                     Messages.UnexpectedToken;
-
-                if (token.Type == TokenType.Keyword)
-                {
-                    if (Scanner.IsFutureReservedWord((string) token.Value!))
-                    {
-                        msg = Messages.UnexpectedReserved;
-                    }
-                    else if (_context.Strict && Scanner.IsStrictModeReservedWord((string) token.Value!))
-                    {
-                        msg = Messages.StrictReservedWord;
-                    }
-                }
             }
 
             value = token.Type == TokenType.Template

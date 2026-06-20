@@ -19,7 +19,7 @@ public abstract partial class Program : Node, ISyntaxTreeRoot
 
     /// <summary>
     /// Gets or sets the list of tokens associated with the AST represented by this node.
-    /// This property is automatically set by <see cref="JavaScriptParser.ParseScript"/> and <see cref="JavaScriptParser.ParseModule"/> when <see cref="ParserOptions.Tokens"/> is set to <see langword="true"/>.
+    /// This property is automatically set by <see cref="AdhocAbstractSyntaxTree.ParseScript"/> when <see cref="ParserOptions.Tokens"/> is set to <see langword="true"/>.
     /// </summary>
     /// <remarks>
     /// The operation is not guaranteed to be thread-safe. In case concurrent access or update is possible, the necessary synchronization is caller's responsibility.
@@ -34,7 +34,7 @@ public abstract partial class Program : Node, ISyntaxTreeRoot
 
     /// <summary>
     /// Gets or sets the list of comments associated with the AST represented by this node.
-    /// This property is automatically set by <see cref="JavaScriptParser.ParseScript"/> and <see cref="JavaScriptParser.ParseModule"/> when <see cref="ParserOptions.Comments"/> is set to <see langword="true"/>.
+    /// This property is automatically set by <see cref="AdhocAbstractSyntaxTree.ParseScript"/> when <see cref="ParserOptions.Comments"/> is set to <see langword="true"/>.
     /// </summary>
     /// <remarks>
     /// The operation is not guaranteed to be thread-safe. In case concurrent access or update is possible, the necessary synchronization is caller's responsibility.

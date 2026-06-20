@@ -27,7 +27,7 @@ internal readonly struct ScannerState
 
 internal readonly record struct LexOptions(bool Strict, bool AllowIdentifierEscape)
 {
-    public LexOptions(JavaScriptParser.Context context) : this(context.Strict, context.AllowIdentifierEscape)
+    public LexOptions(AdhocAbstractSyntaxTree.Context context) : this(context.Strict, context.AllowIdentifierEscape)
     {
     }
 }
@@ -205,32 +205,18 @@ public sealed partial class Scanner
         return _sb;
     }
 
-    // https://tc39.github.io/ecma262/#sec-future-reserved-words
-
-    [StringMatcher("enum", "export", "import", "super")]
-    public static partial bool IsFutureReservedWord(string id);
-
-    [StringMatcher("implements", "interface", "package", "private", "protected", "public", "static", "yield", "let")]
-    public static partial bool IsStrictModeReservedWord(string id);
-
-    public static bool IsRestrictedWord(string id)
-    {
-        return id is "eval" or "arguments";
-    }
-
     [StringMatcher("&&", "||", "==", "!=", "+=", "-=", "*=", "/=", "++", "--", "<<", ">>", "&=", "|=", "^=", "%=", "<=", ">=", "=>", "**")]
     private static partial string? TryGetInternedTwoCharacterPunctuator(ReadOnlySpan<char> id);
 
-    [StringMatcher("===", "!==", ">>>", "<<=", ">>=", "**=", "&&=", "||=")]
+    [StringMatcher("<<=", ">>=", "**=", "&&=", "||=")]
     private static partial string? TryGetInternedThreeCharacterPunctuator(ReadOnlySpan<char> id);
 
     // https://tc39.github.io/ecma262/#sec-keywords
 
     // Note for maintainers: all keywords listed here should be included in ParserExtensions.TryGetInternedString too!
     [StringMatcher(
-        "if", "in", "do", "var", "for", "new", "try", "let", "this", "else", "case", "void", "with", "enum",
-        "while", "break", "catch", "throw", "const", "yield", "class", "super", "return", "typeof", "delete", "switch",
-        "export", "import", "default", "finally", "extends", "function", "continue", "debugger", "instanceof")]
+        "if", "in", "do", "var", "for", "try", "this", "else", "case", "with", "while", "break",
+        "catch", "throw", "yield", "class", "return", "switch", "import", "finally", "continue")]
     public static partial bool IsKeyword(string id);
 
     // https://tc39.github.io/ecma262/#sec-comments

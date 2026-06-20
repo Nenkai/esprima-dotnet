@@ -1064,12 +1064,6 @@ WriteSource:
         _writeContext.SetNodeProperty(nameof(importDeclaration.Source), static node => node.As<ImportDeclaration>().Source);
         VisitRootExpression(importDeclaration.Source, RootExpressionFlags(needsBrackets: false));
 
-        if (importDeclaration.Attributes.Count > 0)
-        {
-            _writeContext.SetNodeProperty(nameof(importDeclaration.Attributes), static node => ref node.As<ImportDeclaration>().Attributes);
-            VisitImportAttributes(in importDeclaration.Attributes);
-        }
-
         StatementNeedsSemicolon();
 
         return importDeclaration;

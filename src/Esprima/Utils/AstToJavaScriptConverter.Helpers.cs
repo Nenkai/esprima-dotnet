@@ -274,7 +274,6 @@ partial class AstToJavaScriptConverter
             case Nodes.FunctionExpression:
             case Nodes.ObjectExpression:
             case Nodes.AssignmentExpression when expression.As<AssignmentExpression>() is { Left.Type: Nodes.ObjectPattern }:
-            case Nodes.Identifier when Scanner.IsStrictModeReservedWord(expression.As<Identifier>().Name):
                 return true;
         }
 
@@ -287,7 +286,6 @@ partial class AstToJavaScriptConverter
         {
             case Nodes.ClassExpression:
             case Nodes.FunctionExpression:
-            case Nodes.Identifier when Scanner.IsStrictModeReservedWord(expression.As<Identifier>().Name):
             case Nodes.SequenceExpression:
                 return true;
         }

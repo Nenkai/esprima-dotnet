@@ -716,11 +716,6 @@ public class AstToJsonConverter : AstVisitor
         {
             Member("specifiers", importDeclaration.Specifiers, e => (Node) e);
             Member("source", importDeclaration.Source);
-            // original Esprima doesn't include this information yet
-            if (_testCompatibilityMode != AstToJsonTestCompatibilityMode.EsprimaOrg && importDeclaration.Attributes.Count > 0)
-            {
-                Member("attributes", importDeclaration.Attributes);
-            }
         }
 
         return importDeclaration;
