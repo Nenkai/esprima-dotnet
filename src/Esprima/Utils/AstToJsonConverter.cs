@@ -4,6 +4,7 @@ using System.Numerics;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Esprima.Ast;
+using Esprima.Ast.Adhoc;
 
 namespace Esprima.Utils;
 
@@ -74,14 +75,6 @@ public class AstToJsonConverter : AstVisitor
         }
     }
 
-    private void WriteRegexValue(RegexValue value)
-    {
-        _writer.StartObject();
-        Member("pattern", value.Pattern);
-        Member("flags", value.Flags);
-        _writer.EndObject();
-    }
-
     private void WriteTokens(IReadOnlyList<SyntaxToken> tokens)
     {
         _writer.StartArray();
@@ -90,11 +83,7 @@ public class AstToJsonConverter : AstVisitor
             OnStartSyntaxElementObject(token);
             Member("type", GetTokenType(token));
             Member("value", token.Value);
-            if (token.RegexValue is not null)
-            {
-                _writer.Member("regex");
-                WriteRegexValue(token.RegexValue);
-            }
+
             OnEndSyntaxElementObject(token);
         }
         _writer.EndArray();
@@ -293,26 +282,6 @@ public class AstToJsonConverter : AstVisitor
         return arrayPattern;
     }
 
-    protected internal override object? VisitArrowFunctionExpression(ArrowFunctionExpression arrowFunctionExpression)
-    {
-        using (StartNodeObject(arrowFunctionExpression))
-        {
-            Member("id", ((IFunction) arrowFunctionExpression).Id);
-            Member("params", arrowFunctionExpression.Params);
-            Member("body", arrowFunctionExpression.Body);
-            Member("generator", ((IFunction) arrowFunctionExpression).Generator);
-            Member("expression", arrowFunctionExpression.Expression);
-            // original Esprima doesn't include this information yet
-            if (_testCompatibilityMode != AstToJsonTestCompatibilityMode.EsprimaOrg)
-            {
-                Member("strict", arrowFunctionExpression.Strict);
-            }
-            Member("async", arrowFunctionExpression.Async);
-        }
-
-        return arrowFunctionExpression;
-    }
-
     protected internal override object? VisitAssignmentExpression(AssignmentExpression assignmentExpression)
     {
         using (StartNodeObject(assignmentExpression))
@@ -428,10 +397,6 @@ public class AstToJsonConverter : AstVisitor
             Member("id", classDeclaration.Id);
             Member("superClass", classDeclaration.SuperClass);
             Member("body", classDeclaration.Body);
-            if (classDeclaration.Decorators.Count > 0)
-            {
-                Member("decorators", classDeclaration.Decorators);
-            }
         }
 
         return classDeclaration;
@@ -475,12 +440,6 @@ public class AstToJsonConverter : AstVisitor
         return continueStatement;
     }
 
-    protected internal override object? VisitDebuggerStatement(DebuggerStatement debuggerStatement)
-    {
-        EmptyNodeObject(debuggerStatement);
-        return debuggerStatement;
-    }
-
     protected internal override object? VisitDecorator(Decorator decorator)
     {
         using (StartNodeObject(decorator))
@@ -508,103 +467,14 @@ public class AstToJsonConverter : AstVisitor
         return emptyStatement;
     }
 
-    protected internal override object? VisitExportAllDeclaration(ExportAllDeclaration exportAllDeclaration)
-    {
-        using (StartNodeObject(exportAllDeclaration))
-        {
-            Member("source", exportAllDeclaration.Source);
-
-            // original Esprima doesn't include this information yet
-            if (_testCompatibilityMode != AstToJsonTestCompatibilityMode.EsprimaOrg)
-            {
-                Member("exported", exportAllDeclaration.Exported);
-                if (exportAllDeclaration.Attributes.Count > 0)
-                {
-                    Member("attributes", exportAllDeclaration.Attributes);
-                }
-            }
-        }
-
-        return exportAllDeclaration;
-    }
-
-    protected internal override object? VisitExportDefaultDeclaration(ExportDefaultDeclaration exportDefaultDeclaration)
-    {
-        using (StartNodeObject(exportDefaultDeclaration))
-        {
-            Member("declaration", exportDefaultDeclaration.Declaration);
-        }
-
-        return exportDefaultDeclaration;
-    }
-
-    protected internal override object? VisitExportNamedDeclaration(ExportNamedDeclaration exportNamedDeclaration)
-    {
-        using (StartNodeObject(exportNamedDeclaration))
-        {
-            Member("declaration", exportNamedDeclaration.Declaration);
-            Member("specifiers", exportNamedDeclaration.Specifiers);
-            Member("source", exportNamedDeclaration.Source);
-            // original Esprima doesn't include this information yet
-            if (_testCompatibilityMode != AstToJsonTestCompatibilityMode.EsprimaOrg && exportNamedDeclaration.Attributes.Count > 0)
-            {
-                Member("attributes", exportNamedDeclaration.Attributes);
-            }
-        }
-
-        return exportNamedDeclaration;
-    }
-
-    protected internal override object? VisitExportSpecifier(ExportSpecifier exportSpecifier)
-    {
-        using (StartNodeObject(exportSpecifier))
-        {
-            Member("exported", exportSpecifier.Exported);
-            Member("local", exportSpecifier.Local);
-        }
-
-        return exportSpecifier;
-    }
-
     protected internal override object? VisitExpressionStatement(ExpressionStatement expressionStatement)
     {
         using (StartNodeObject(expressionStatement))
         {
-            if (expressionStatement is Directive d)
-            {
-                Member("directive", d.Value);
-            }
-
             Member("expression", expressionStatement.Expression);
         }
 
         return expressionStatement;
-    }
-
-    protected internal override object? VisitForInStatement(ForInStatement forInStatement)
-    {
-        using (StartNodeObject(forInStatement))
-        {
-            Member("left", forInStatement.Left);
-            Member("right", forInStatement.Right);
-            Member("body", forInStatement.Body);
-            Member("each", false);
-        }
-
-        return forInStatement;
-    }
-
-    protected internal override object? VisitForOfStatement(ForOfStatement forOfStatement)
-    {
-        using (StartNodeObject(forOfStatement))
-        {
-            Member("await", forOfStatement.Await);
-            Member("left", forOfStatement.Left);
-            Member("right", forOfStatement.Right);
-            Member("body", forOfStatement.Body);
-        }
-
-        return forOfStatement;
     }
 
     protected internal override object? VisitForStatement(ForStatement forStatement)
@@ -715,7 +585,8 @@ public class AstToJsonConverter : AstVisitor
         using (StartNodeObject(importDeclaration))
         {
             Member("specifiers", importDeclaration.Specifiers, e => (Node) e);
-            Member("source", importDeclaration.Source);
+            Member("target", importDeclaration.Target);
+            Member("alias", importDeclaration.Alias);
         }
 
         return importDeclaration;
@@ -744,7 +615,9 @@ public class AstToJsonConverter : AstVisitor
                 Location = new Location(importExpression.Location.Start, new Position(importExpression.Location.Start.Line, importExpression.Location.Start.Column + importToken.Length)),
                 Range = new Range(importExpression.Range.Start, importExpression.Range.Start + importToken.Length)
             };
-            var args = new NodeList<Expression>(new Expression[] { importExpression.Source }, count: 1);
+            // TODO
+            /*
+            var args = new NodeList<Expression>(new Expression[] { importExpression.Declaration }, count: 1);
             var callExpression = new CallExpression(callee, args, optional: false)
             {
                 Location = importExpression.Location,
@@ -752,18 +625,14 @@ public class AstToJsonConverter : AstVisitor
             };
 
             return Visit(callExpression);
+            */
         }
 
         using (StartNodeObject(importExpression))
         {
             if (_testCompatibilityMode != AstToJsonTestCompatibilityMode.EsprimaOrg)
             {
-                Member("source", importExpression.Source);
-
-                if (importExpression.Options is not null)
-                {
-                    Member("options", importExpression.Options);
-                }
+                Member("source", importExpression.Declaration);
             }
         }
 
@@ -810,18 +679,12 @@ public class AstToJsonConverter : AstVisitor
 
             switch (literal.TokenType)
             {
-                case TokenType.NullLiteral:
-                case TokenType.RegularExpression when literal.Value is null:
+                case TokenType.NilLiteral:
                     _writer.Null();
                     break;
 
                 case TokenType.BooleanLiteral:
                     _writer.Boolean((bool) literal.Value!);
-                    break;
-
-                case TokenType.RegularExpression:
-                    _writer.StartObject();
-                    _writer.EndObject();
                     break;
 
                 case TokenType.NumericLiteral when (double) literal.Value! is var doubleValue
@@ -836,16 +699,6 @@ public class AstToJsonConverter : AstVisitor
             }
 
             Member("raw", literal.Raw);
-
-            if (literal is RegExpLiteral regExpLiteral)
-            {
-                _writer.Member("regex");
-                WriteRegexValue(regExpLiteral.Regex);
-            }
-            else if (literal.Value is BigInteger bigInt)
-            {
-                Member("bigint", bigInt.ToString(CultureInfo.InvariantCulture));
-            }
         }
 
         return literal;
@@ -1121,7 +974,6 @@ public class AstToJsonConverter : AstVisitor
         {
             Member("block", tryStatement.Block);
             Member("handler", tryStatement.Handler);
-            Member("finalizer", tryStatement.Finalizer);
         }
 
         return tryStatement;

@@ -8,11 +8,10 @@ public enum UnaryOperator
     Minus,
     BitwiseNot,
     LogicalNot,
-    Delete,
-    Void,
-    TypeOf,
     Increment,
-    Decrement
+    Decrement,
+    Indirection,
+    ReferenceOf,
 }
 
 [VisitableNode(ChildProperties = new[] { nameof(Argument) }, SealOverrideMethods = true)]
@@ -49,9 +48,8 @@ public partial class UnaryExpression : Expression
             "-" => UnaryOperator.Minus,
             "~" => UnaryOperator.BitwiseNot,
             "!" => UnaryOperator.LogicalNot,
-            "delete" => UnaryOperator.Delete,
-            "void" => UnaryOperator.Void,
-            "typeof" => UnaryOperator.TypeOf,
+            "*" => UnaryOperator.Indirection,
+            "&" => UnaryOperator.ReferenceOf,
             "++" => UnaryOperator.Increment,
             "--" => UnaryOperator.Decrement,
             _ => throw new ArgumentOutOfRangeException(nameof(op), op, "Invalid unary operator.")
@@ -66,9 +64,8 @@ public partial class UnaryExpression : Expression
             UnaryOperator.Minus => "-",
             UnaryOperator.BitwiseNot => "~",
             UnaryOperator.LogicalNot => "!",
-            UnaryOperator.Delete => "delete",
-            UnaryOperator.Void => "void",
-            UnaryOperator.TypeOf => "typeof",
+            UnaryOperator.Indirection => "*",
+            UnaryOperator.ReferenceOf => "&",
             UnaryOperator.Increment => "++",
             UnaryOperator.Decrement => "--",
             _ => throw new ArgumentOutOfRangeException(nameof(op), op, "Invalid unary operator.")

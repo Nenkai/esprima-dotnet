@@ -10,8 +10,6 @@ public sealed partial class VariableDeclaration : Declaration
         return kind switch
         {
             VariableDeclarationKind.Var => "var",
-            VariableDeclarationKind.Let => "let",
-            VariableDeclarationKind.Const => "const",
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Invalid variable declaration kind.")
         };
     }

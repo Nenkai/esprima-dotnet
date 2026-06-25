@@ -3,6 +3,8 @@
 public enum VariableDeclarationKind
 {
     Var,
-    Let,
-    Const
+    Static,
+    Attribute,
+    Delegate,
+    Invalid,
 }

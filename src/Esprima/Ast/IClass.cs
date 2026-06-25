@@ -6,9 +6,8 @@
 public interface IClass
 {
     Nodes Type { get; }
-    Identifier? Id { get; }
+    Expression? Id { get; }
     Expression? SuperClass { get; }
-    ClassBody Body { get; }
-    ref readonly NodeList<Decorator> Decorators { get; }
+    Statement Body { get; }
     ChildNodes ChildNodes { get; }
 }

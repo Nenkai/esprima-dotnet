@@ -3,7 +3,7 @@
 namespace Esprima.Ast;
 
 [VisitableNode(ChildProperties = new[] { nameof(Argument) })]
-public sealed partial class RestElement : Node
+public sealed partial class RestElement : Expression
 {
     public RestElement(Node argument) : base(Nodes.RestElement)
     {

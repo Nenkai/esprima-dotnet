@@ -1,5 +1,6 @@
 ﻿using System.Runtime.CompilerServices;
 using Esprima.Ast;
+using Esprima.Ast.Adhoc;
 using static Esprima.Utils.JavaScriptTextWriter;
 
 namespace Esprima.Utils;
@@ -204,46 +205,6 @@ public partial class AstToJavaScriptConverter : AstVisitor
         return arrayPattern;
     }
 
-    protected internal override object? VisitArrowFunctionExpression(ArrowFunctionExpression arrowFunctionExpression)
-    {
-        if (arrowFunctionExpression.Async)
-        {
-            _writeContext.SetNodeProperty(nameof(arrowFunctionExpression.Async), static node => node.As<ArrowFunctionExpression>().Async);
-            Writer.WriteKeyword("async", TokenFlags.TrailingSpaceRecommended, ref _writeContext);
-        }
-
-        _writeContext.SetNodeProperty(nameof(arrowFunctionExpression.Params), static node => ref node.As<ArrowFunctionExpression>().Params);
-
-        if (arrowFunctionExpression.Params.Count == 1 && arrowFunctionExpression.Params[0].Type == Nodes.Identifier)
-        {
-            VisitAuxiliaryNodeList(in arrowFunctionExpression.Params, separator: ",");
-        }
-        else
-        {
-            Writer.WritePunctuator("(", TokenFlags.Leading, ref _writeContext);
-            VisitAuxiliaryNodeList(in arrowFunctionExpression.Params, separator: ",");
-            Writer.WritePunctuator(")", TokenFlags.Trailing, ref _writeContext);
-        }
-
-        _writeContext.ClearNodeProperty();
-        Writer.WritePunctuator("=>", TokenFlags.SurroundingSpaceRecommended, ref _writeContext);
-
-        _writeContext.SetNodeProperty(nameof(arrowFunctionExpression.Body), static node => node.As<ArrowFunctionExpression>().Body);
-        if (arrowFunctionExpression.Body is BlockStatement bodyBlockStatement)
-        {
-            VisitStatement(bodyBlockStatement, StatementFlags.IsRightMost);
-        }
-        else
-        {
-            var bodyExpression = arrowFunctionExpression.Body.As<Expression>();
-            var bodyNeedsBrackets = UnaryOperandNeedsBrackets(arrowFunctionExpression, bodyExpression);
-            VisitExpression(bodyExpression, SubExpressionFlags(bodyNeedsBrackets, isLeftMost: false), static (@this, expression, flags) =>
-                @this.DisambiguateExpression(expression, ExpressionFlags.IsInsideArrowFunctionBody | ExpressionFlags.IsLeftMostInArrowFunctionBody | @this.PropagateExpressionFlags(flags)));
-        }
-
-        return arrowFunctionExpression;
-    }
-
     protected internal override object? VisitAssignmentExpression(AssignmentExpression assignmentExpression)
     {
         _writeContext.SetNodeProperty(nameof(assignmentExpression.Left), static node => node.As<AssignmentExpression>().Left);
@@ -416,7 +377,7 @@ public partial class AstToJavaScriptConverter : AstVisitor
         }
 
         _writeContext.SetNodeProperty(nameof(catchClause.Body), static node => node.As<CatchClause>().Body);
-        VisitStatement(catchClause.Body, StatementBodyFlags(isRightMost: ParentNode!.As<TryStatement>().Finalizer is null));
+        VisitStatement(catchClause.Body, StatementBodyFlags(isRightMost: true));
 
         return catchClause;
     }
@@ -443,14 +404,6 @@ public partial class AstToJavaScriptConverter : AstVisitor
 
     protected internal override object? VisitClassDeclaration(ClassDeclaration classDeclaration)
     {
-        if (classDeclaration.Decorators.Count > 0)
-        {
-            _writeContext.SetNodeProperty(nameof(classDeclaration.Decorators), static node => ref node.As<ClassDeclaration>().Decorators);
-            VisitAuxiliaryNodeList(classDeclaration.Decorators, separator: string.Empty);
-
-            _writeContext.ClearNodeProperty();
-        }
-
         Writer.WriteKeyword("class", TokenFlags.SurroundingSpaceRecommended, ref _writeContext);
 
         if (classDeclaration.Id is not null)
@@ -551,15 +504,6 @@ public partial class AstToJavaScriptConverter : AstVisitor
         return continueStatement;
     }
 
-    protected internal override object? VisitDebuggerStatement(DebuggerStatement debuggerStatement)
-    {
-        Writer.WriteKeyword("debugger", TokenFlags.LeadingSpaceRecommended, ref _writeContext);
-
-        StatementNeedsSemicolon();
-
-        return debuggerStatement;
-    }
-
     protected internal override object? VisitDecorator(Decorator decorator)
     {
         // https://github.com/tc39/proposal-decorators
@@ -598,110 +542,6 @@ public partial class AstToJavaScriptConverter : AstVisitor
         return emptyStatement;
     }
 
-    protected internal override object? VisitExportAllDeclaration(ExportAllDeclaration exportAllDeclaration)
-    {
-        Writer.WriteKeyword("export", TokenFlags.SurroundingSpaceRecommended, ref _writeContext);
-        Writer.WritePunctuator("*", TokenFlags.SurroundingSpaceRecommended, ref _writeContext);
-
-        if (exportAllDeclaration.Exported is not null)
-        {
-            _writeContext.SetNodeProperty(nameof(exportAllDeclaration.Exported), static node => node.As<ExportAllDeclaration>().Exported);
-            Writer.WriteKeyword("as", TokenFlags.SurroundingSpaceRecommended, ref _writeContext);
-
-            VisitExportOrImportSpecifierIdentifier(exportAllDeclaration.Exported);
-        }
-
-        _writeContext.ClearNodeProperty();
-        Writer.WriteKeyword("from", TokenFlags.SurroundingSpaceRecommended, ref _writeContext);
-
-        _writeContext.SetNodeProperty(nameof(exportAllDeclaration.Source), static node => node.As<ExportAllDeclaration>().Source);
-        VisitRootExpression(exportAllDeclaration.Source, RootExpressionFlags(needsBrackets: false));
-
-        if (exportAllDeclaration.Attributes.Count > 0)
-        {
-            _writeContext.SetNodeProperty(nameof(exportAllDeclaration.Attributes), static node => ref node.As<ExportAllDeclaration>().Attributes);
-            VisitImportAttributes(in exportAllDeclaration.Attributes);
-        }
-
-        StatementNeedsSemicolon();
-
-        return exportAllDeclaration;
-    }
-
-    protected internal override object? VisitExportDefaultDeclaration(ExportDefaultDeclaration exportDefaultDeclaration)
-    {
-        Writer.WriteKeyword("export", TokenFlags.SurroundingSpaceRecommended, ref _writeContext);
-        Writer.WriteKeyword("default", TokenFlags.SurroundingSpaceRecommended, ref _writeContext);
-
-        _writeContext.SetNodeProperty(nameof(exportDefaultDeclaration.Declaration), static node => node.As<ExportDefaultDeclaration>().Declaration);
-        if (exportDefaultDeclaration.Declaration is Declaration declaration)
-        {
-            VisitStatement(declaration, StatementFlags.IsRightMost);
-        }
-        else
-        {
-            VisitRootExpression(exportDefaultDeclaration.Declaration.As<Expression>(), ExpressionFlags.IsInsideExportDefaultExpression | RootExpressionFlags(needsBrackets: false));
-
-            StatementNeedsSemicolon();
-        }
-
-        return exportDefaultDeclaration;
-    }
-
-    protected internal override object? VisitExportNamedDeclaration(ExportNamedDeclaration exportNamedDeclaration)
-    {
-        Writer.WriteKeyword("export", TokenFlags.SurroundingSpaceRecommended, ref _writeContext);
-
-        if (exportNamedDeclaration.Declaration is not null)
-        {
-            _writeContext.SetNodeProperty(nameof(exportNamedDeclaration.Declaration), static node => node.As<ExportNamedDeclaration>().Declaration);
-            VisitStatement(exportNamedDeclaration.Declaration.As<Declaration>(), StatementFlags.IsRightMost);
-        }
-        else
-        {
-            _writeContext.SetNodeProperty(nameof(exportNamedDeclaration.Specifiers), static node => ref node.As<ExportNamedDeclaration>().Specifiers);
-            Writer.WritePunctuator("{", TokenFlags.Leading | TokenFlags.SurroundingSpaceRecommended, ref _writeContext);
-            VisitAuxiliaryNodeList(in exportNamedDeclaration.Specifiers, separator: ",");
-            Writer.WritePunctuator("}", TokenFlags.Trailing | TokenFlags.LeadingSpaceRecommended, ref _writeContext);
-
-            if (exportNamedDeclaration.Source is not null)
-            {
-                _writeContext.ClearNodeProperty();
-                Writer.WriteKeyword("from", TokenFlags.SurroundingSpaceRecommended, ref _writeContext);
-
-                _writeContext.SetNodeProperty(nameof(exportNamedDeclaration.Source), static node => node.As<ExportNamedDeclaration>().Source);
-                VisitRootExpression(exportNamedDeclaration.Source, RootExpressionFlags(needsBrackets: false));
-
-                if (exportNamedDeclaration.Attributes.Count > 0)
-                {
-                    _writeContext.SetNodeProperty(nameof(exportNamedDeclaration.Attributes), static node => ref node.As<ExportNamedDeclaration>().Attributes);
-                    VisitImportAttributes(in exportNamedDeclaration.Attributes);
-                }
-            }
-
-            StatementNeedsSemicolon();
-        }
-
-        return exportNamedDeclaration;
-    }
-
-    protected internal override object? VisitExportSpecifier(ExportSpecifier exportSpecifier)
-    {
-        _writeContext.SetNodeProperty(nameof(exportSpecifier.Local), static node => node.As<ExportSpecifier>().Local);
-        VisitExportOrImportSpecifierIdentifier(exportSpecifier.Local);
-
-        if (exportSpecifier.Local != exportSpecifier.Exported)
-        {
-            _writeContext.ClearNodeProperty();
-            Writer.WriteKeyword("as", TokenFlags.SurroundingSpaceRecommended, ref _writeContext);
-
-            _writeContext.SetNodeProperty(nameof(exportSpecifier.Exported), static node => node.As<ExportSpecifier>().Exported);
-            VisitExportOrImportSpecifierIdentifier(exportSpecifier.Exported);
-        }
-
-        return exportSpecifier;
-    }
-
     protected internal override object? VisitExpressionStatement(ExpressionStatement expressionStatement)
     {
         Writer.SpaceRecommendedAfterLastToken();
@@ -725,84 +565,6 @@ public partial class AstToJavaScriptConverter : AstVisitor
         {
             return base.VisitExtension(node);
         }
-    }
-
-    protected internal override object? VisitForInStatement(ForInStatement forInStatement)
-    {
-        Writer.WriteKeyword("for", TokenFlags.SurroundingSpaceRecommended, ref _writeContext);
-
-        Writer.WritePunctuator("(", TokenFlags.Leading | TokenFlags.LeadingSpaceRecommended, ref _writeContext);
-
-        _writeContext.SetNodeProperty(nameof(forInStatement.Left), static node => node.As<ForInStatement>().Left);
-
-        if (forInStatement.Left is VariableDeclaration variableDeclaration)
-        {
-            VisitStatement(variableDeclaration, StatementFlags.NestedVariableDeclaration);
-        }
-        else if (forInStatement.Left is Expression leftExpression)
-        {
-            VisitRootExpression(leftExpression, RootExpressionFlags(needsBrackets: false));
-        }
-        else
-        {
-            VisitAuxiliaryNode(forInStatement.Left, static delegate { return s_bindingPatternAllowsExpressionsFlag; });
-        }
-
-        _writeContext.ClearNodeProperty();
-        Writer.WriteKeyword("in", TokenFlags.InBetween | TokenFlags.SurroundingSpaceRecommended, ref _writeContext);
-
-        _writeContext.SetNodeProperty(nameof(forInStatement.Right), static node => node.As<ForInStatement>().Right);
-        VisitRootExpression(forInStatement.Right, RootExpressionFlags(needsBrackets: false));
-
-        _writeContext.ClearNodeProperty();
-        Writer.WritePunctuator(")", TokenFlags.Trailing | TokenFlags.TrailingSpaceRecommended, ref _writeContext);
-
-        _writeContext.SetNodeProperty(nameof(forInStatement.Body), static node => node.As<ForInStatement>().Body);
-        VisitStatement(forInStatement.Body, StatementBodyFlags(isRightMost: true));
-
-        return forInStatement;
-    }
-
-    protected internal override object? VisitForOfStatement(ForOfStatement forOfStatement)
-    {
-        Writer.WriteKeyword("for", TokenFlags.SurroundingSpaceRecommended, ref _writeContext);
-
-        if (forOfStatement.Await)
-        {
-            _writeContext.SetNodeProperty(nameof(forOfStatement.Await), static node => node.As<ForOfStatement>().Await);
-            Writer.WriteKeyword("await", TokenFlags.SurroundingSpaceRecommended, ref _writeContext);
-        }
-
-        Writer.WritePunctuator("(", TokenFlags.Leading | TokenFlags.LeadingSpaceRecommended, ref _writeContext);
-
-        _writeContext.SetNodeProperty(nameof(forOfStatement.Left), static node => node.As<ForOfStatement>().Left);
-
-        if (forOfStatement.Left is VariableDeclaration variableDeclaration)
-        {
-            VisitStatement(variableDeclaration, StatementFlags.NestedVariableDeclaration);
-        }
-        else if (forOfStatement.Left is Expression leftExpression)
-        {
-            VisitRootExpression(leftExpression, RootExpressionFlags(needsBrackets: false));
-        }
-        else
-        {
-            VisitAuxiliaryNode(forOfStatement.Left, static delegate { return s_bindingPatternAllowsExpressionsFlag; });
-        }
-
-        _writeContext.ClearNodeProperty();
-        Writer.WriteKeyword("of", TokenFlags.InBetween | TokenFlags.SurroundingSpaceRecommended, ref _writeContext);
-
-        _writeContext.SetNodeProperty(nameof(forOfStatement.Right), static node => node.As<ForOfStatement>().Right);
-        VisitRootExpression(forOfStatement.Right, RootExpressionFlags(needsBrackets: ExpressionNeedsBracketsInList(forOfStatement.Right)));
-
-        _writeContext.ClearNodeProperty();
-        Writer.WritePunctuator(")", TokenFlags.Trailing | TokenFlags.TrailingSpaceRecommended, ref _writeContext);
-
-        _writeContext.SetNodeProperty(nameof(forOfStatement.Body), static node => node.As<ForOfStatement>().Body);
-        VisitStatement(forOfStatement.Body, StatementBodyFlags(isRightMost: true));
-
-        return forOfStatement;
     }
 
     protected internal override object? VisitForStatement(ForStatement forStatement)
@@ -1061,8 +823,6 @@ EndSpecifiers:
         Writer.WriteKeyword("from", TokenFlags.SurroundingSpaceRecommended, ref _writeContext);
 
 WriteSource:
-        _writeContext.SetNodeProperty(nameof(importDeclaration.Source), static node => node.As<ImportDeclaration>().Source);
-        VisitRootExpression(importDeclaration.Source, RootExpressionFlags(needsBrackets: false));
 
         StatementNeedsSemicolon();
 
@@ -1085,23 +845,15 @@ WriteSource:
 
         // ImportExpression arguments need special care because of the unusual model (separate expressions instead of an expression list).
 
-        var paramCount = importExpression.Options is null ? 1 : 2;
-        Writer.StartExpressionList(paramCount, ref _writeContext);
+        Writer.StartExpressionList(1, ref _writeContext);
 
-        _writeContext.SetNodeProperty(nameof(ImportExpression.Source), static node => node.As<ImportExpression>().Source);
-        VisitExpressionListItem(importExpression.Source, 0, paramCount, static (@this, expression, _, _) =>
-            s_getCombinedSubExpressionFlags(@this, expression, SubExpressionFlags(@this.ExpressionNeedsBracketsInList(expression), isLeftMost: false)));
+        _writeContext.SetNodeProperty(nameof(ImportExpression.Declaration), static node => node.As<ImportExpression>().Declaration);
 
-        if (importExpression.Options is not null)
-        {
-            // https://github.com/tc39/proposal-import-attributes#dynamic-import
+        // TODO
+        //VisitExpressionListItem(importExpression.Declaration, 0, 1, static (@this, expression, _, _) =>
+        //    s_getCombinedSubExpressionFlags(@this, expression, SubExpressionFlags(@this.ExpressionNeedsBracketsInList(expression), isLeftMost: false)));
 
-            _writeContext.SetNodeProperty(nameof(ImportExpression.Options), static node => node.As<ImportExpression>().Options);
-            VisitExpressionListItem(importExpression.Options, 1, paramCount, static (@this, expression, _, _) =>
-                s_getCombinedSubExpressionFlags(@this, expression, SubExpressionFlags(@this.ExpressionNeedsBracketsInList(expression), isLeftMost: false)));
-        }
-
-        Writer.EndExpressionList(paramCount, ref _writeContext);
+        Writer.EndExpressionList(1, ref _writeContext);
 
         _writeContext.ClearNodeProperty();
         Writer.WritePunctuator(")", TokenFlags.Trailing, ref _writeContext);
@@ -1653,16 +1405,6 @@ WriteSource:
 
             _writeContext.SetNodeProperty(nameof(tryStatement.Handler), static node => node.As<TryStatement>().Handler);
             VisitAuxiliaryNode(tryStatement.Handler);
-            bodyFlags = StatementBodyFlags(isRightMost: tryStatement.Finalizer is null);
-        }
-
-        if (tryStatement.Finalizer is not null)
-        {
-            _writeContext.ClearNodeProperty();
-            Writer.WriteKeyword("finally", TokenFlags.SurroundingSpaceRecommended | StatementBodyFlagsToKeywordFlags(bodyFlags), ref _writeContext);
-
-            _writeContext.SetNodeProperty(nameof(tryStatement.Finalizer), static node => node.As<TryStatement>().Finalizer);
-            VisitStatement(tryStatement.Finalizer, StatementBodyFlags(isRightMost: true));
         }
 
         return tryStatement;

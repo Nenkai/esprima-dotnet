@@ -108,11 +108,11 @@ internal static partial class ParserExtensions
 
     [StringMatcher(
         // basic keywords (should include all keywords defined in Scanner.IsKeyword)
-        "if", "in", "do", "var", "for", "new", "try", "let", "this", "else", "case", "void", "with", "enum",
-        "while", "break", "catch", "throw", "const", "yield", "class", "super", "return", "typeof", "delete", "switch",
-        "export", "import", "default", "finally", "extends", "function", "continue", "debugger", "instanceof",
+        "if", "do", "var", "for", "foreach", "static", "attribute", "try", "self", "else", "case", "while", "break", "catch", "throw",
+        "yield", "class", "module", "super", "return", "switch", "import", "default", "finally", "function", "method",
+        "continue", "undef", "print", "delegate", "require",
         // contextual keywords (should at least include "null", "false" and "true")
-        "as", "of", "get", "set", "false", "from", "null", "true", "async", "await", "static", "constructor",
+        "as", "in", "false", "nil", "true", "async", "await", "static", "class",
         // some common identifiers/literals in our test data set (benchmarks + test suite)
         "undefined", "length", "object", "Object", "obj", "Array", "Math", "data", "done", "args", "arguments", "Symbol", "prototype",
         "options", "value", "name", "self", "key", "\"use strict\"", "use strict"

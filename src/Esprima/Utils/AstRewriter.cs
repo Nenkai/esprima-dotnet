@@ -65,24 +65,6 @@ public partial class AstRewriter : AstVisitor
         return false;
     }
 
-    protected internal override object? VisitExportSpecifier(ExportSpecifier exportSpecifier)
-    {
-        Expression local;
-        Expression exported;
-
-        if (exportSpecifier.Exported == exportSpecifier.Local)
-        {
-            exported = local = VisitAndConvert(exportSpecifier.Local);
-        }
-        else
-        {
-            local = VisitAndConvert(exportSpecifier.Local);
-            exported = VisitAndConvert(exportSpecifier.Exported);
-        }
-
-        return exportSpecifier.UpdateWith(local, exported);
-    }
-
     protected internal override object? VisitImportSpecifier(ImportSpecifier importSpecifier)
     {
         Expression imported;

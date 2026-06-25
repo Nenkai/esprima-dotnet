@@ -3,7 +3,7 @@
 namespace Esprima.Ast;
 
 [VisitableNode(ChildProperties = new[] { nameof(Left), nameof(Right) })]
-public sealed partial class AssignmentPattern : Node
+public sealed partial class AssignmentPattern : Expression
 {
     internal Expression _right;
 

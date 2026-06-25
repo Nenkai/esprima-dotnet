@@ -148,13 +148,11 @@ public partial class JavaScriptTextWriter
     {
         switch (LastTokenType)
         {
-            case TokenType.BigIntLiteral:
             case TokenType.BooleanLiteral:
             case TokenType.Identifier:
             case TokenType.Keyword:
-            case TokenType.NullLiteral:
+            case TokenType.NilLiteral:
             case TokenType.NumericLiteral:
-            case TokenType.RegularExpression:
                 WriteSpace();
                 break;
             case TokenType.EOF:
@@ -203,13 +201,11 @@ public partial class JavaScriptTextWriter
     {
         switch (LastTokenType)
         {
-            case TokenType.BigIntLiteral:
             case TokenType.BooleanLiteral:
             case TokenType.Identifier:
             case TokenType.Keyword:
-            case TokenType.NullLiteral:
+            case TokenType.NilLiteral:
             case TokenType.NumericLiteral:
-            case TokenType.RegularExpression:
                 WriteSpace();
                 break;
             case TokenType.EOF:
@@ -258,14 +254,12 @@ public partial class JavaScriptTextWriter
     {
         switch (LastTokenType)
         {
-            case TokenType.BigIntLiteral:
             case TokenType.BooleanLiteral:
             case TokenType.Identifier:
             case TokenType.Keyword:
-            case TokenType.NullLiteral:
+            case TokenType.NilLiteral:
             case TokenType.NumericLiteral:
-            case TokenType.RegularExpression:
-                if (type is not (TokenType.StringLiteral or TokenType.RegularExpression))
+                if (type is not TokenType.StringLiteral)
                 {
                     WriteSpace();
                 }
@@ -275,7 +269,7 @@ public partial class JavaScriptTextWriter
             case TokenType.Template:
                 break;
             case TokenType.Punctuator:
-                if (type == TokenType.RegularExpression && _lookbehind == TokenSequence.BinaryDivide)
+                if (_lookbehind == TokenSequence.BinaryDivide)
                 {
                     WriteSpace();
                 }

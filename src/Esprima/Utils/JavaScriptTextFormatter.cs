@@ -427,10 +427,7 @@ public abstract class JavaScriptTextFormatter : JavaScriptTextWriter
                 KeepSingleStatementBodyInLine,
 
             Nodes.ClassDeclaration or
-            Nodes.ImportDeclaration or
-            Nodes.ExportAllDeclaration or
-            Nodes.ExportDefaultDeclaration or
-            Nodes.ExportNamedDeclaration =>
+            Nodes.ImportDeclaration =>
                 throw new ArgumentException($"Operation is not defined for nodes of type {statement.Type}.", nameof(statement)),
 
             // Extensions

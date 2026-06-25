@@ -27,7 +27,7 @@ public sealed partial class AssignmentExpression : Expression
 {
     public AssignmentExpression(
         string op,
-        Node left,
+        Expression left,
         Expression right) :
         this(ParseAssignmentOperator(op), left, right)
     {
@@ -35,7 +35,7 @@ public sealed partial class AssignmentExpression : Expression
 
     public AssignmentExpression(
         AssignmentOperator op,
-        Node left,
+        Expression left,
         Expression right) :
         base(Nodes.AssignmentExpression)
     {
@@ -97,11 +97,11 @@ public sealed partial class AssignmentExpression : Expression
     /// <remarks>
     /// <see cref="Identifier"/> | <see cref="MemberExpression"/> | <see cref="BindingPattern"/> 
     /// </remarks>
-    public Node Left { [MethodImpl(MethodImplOptions.AggressiveInlining)] get; }
+    public Expression Left { [MethodImpl(MethodImplOptions.AggressiveInlining)] get; }
     public Expression Right { [MethodImpl(MethodImplOptions.AggressiveInlining)] get; }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private AssignmentExpression Rewrite(Node left, Expression right)
+    private AssignmentExpression Rewrite(Expression left, Expression right)
     {
         return new AssignmentExpression(Operator, left, right);
     }

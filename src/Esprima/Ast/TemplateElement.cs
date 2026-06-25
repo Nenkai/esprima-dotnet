@@ -11,8 +11,9 @@ public sealed partial class TemplateElement : Node
         Tail = tail;
     }
 
-    public sealed record TemplateElementValue(string? Cooked, string Raw);
+    public sealed record TemplateElementValue(string? Cooked, string Raw, bool HasHexEscape);
 
     public TemplateElementValue Value { [MethodImpl(MethodImplOptions.AggressiveInlining)] get; }
     public bool Tail { [MethodImpl(MethodImplOptions.AggressiveInlining)] get; }
+    public bool HasHexEscape { [MethodImpl(MethodImplOptions.AggressiveInlining)] get; }
 }

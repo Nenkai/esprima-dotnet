@@ -1,26 +1,21 @@
 ﻿using System.Runtime.CompilerServices;
+using Esprima.Ast.Adhoc;
 
 namespace Esprima.Ast;
 
-[VisitableNode(ChildProperties = new[] { nameof(Source), nameof(Options) })]
+[VisitableNode(ChildProperties = new[] { nameof(Declaration) })]
 public sealed partial class ImportExpression : Expression
 {
-    public ImportExpression(Expression source) : this(source, null)
+    public ImportExpression(ImportDeclaration source) : base(Nodes.ImportExpression)
     {
+        Declaration = source;
     }
 
-    public ImportExpression(Expression source, Expression? options) : base(Nodes.ImportExpression)
-    {
-        Source = source;
-        Options = options;
-    }
-
-    public Expression Source { [MethodImpl(MethodImplOptions.AggressiveInlining)] get; }
-    public Expression? Options { [MethodImpl(MethodImplOptions.AggressiveInlining)] get; }
+    public ImportDeclaration Declaration { [MethodImpl(MethodImplOptions.AggressiveInlining)] get; }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static ImportExpression Rewrite(Expression source, Expression? options)
+    private static ImportExpression Rewrite(ImportDeclaration source)
     {
-        return new ImportExpression(source, options);
+        return new ImportExpression(source);
     }
 }

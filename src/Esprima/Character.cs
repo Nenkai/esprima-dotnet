@@ -44,6 +44,9 @@ public static partial class Character
 
     internal static bool IsIdentifierStart(char ch)
     {
+        if (ch == '\\')
+            return false;
+
         return HasCharacterFlag(ch, CharacterMask.IdentifierStart);
     }
 

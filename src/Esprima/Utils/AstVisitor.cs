@@ -14,18 +14,6 @@ public partial class AstVisitor
         return node.Accept(this);
     }
 
-    protected internal virtual object? VisitExportSpecifier(ExportSpecifier exportSpecifier)
-    {
-        Visit(exportSpecifier.Local);
-
-        if (exportSpecifier.Exported != exportSpecifier.Local)
-        {
-            Visit(exportSpecifier.Exported);
-        }
-
-        return exportSpecifier;
-    }
-
     protected internal virtual object? VisitExtension(Node node)
     {
         // Node type Extension is used to represent extensions to the standard AST (for example, see JSX parsing).

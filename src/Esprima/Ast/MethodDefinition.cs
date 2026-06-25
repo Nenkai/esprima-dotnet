@@ -10,7 +10,7 @@ public sealed partial class MethodDefinition : ClassProperty
     public MethodDefinition(
         Expression key,
         bool computed,
-        FunctionExpression value,
+        Expression value,
         PropertyKind kind,
         bool isStatic,
         in NodeList<Decorator> decorators)
@@ -21,14 +21,14 @@ public sealed partial class MethodDefinition : ClassProperty
         _decorators = decorators;
     }
 
-    public new FunctionExpression Value { [MethodImpl(MethodImplOptions.AggressiveInlining)] get; }
+    public new Expression Value { [MethodImpl(MethodImplOptions.AggressiveInlining)] get; }
     protected override Expression? GetValue() => Value;
 
     public bool Static { [MethodImpl(MethodImplOptions.AggressiveInlining)] get; }
     public ref readonly NodeList<Decorator> Decorators { [MethodImpl(MethodImplOptions.AggressiveInlining)] get => ref _decorators; }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private MethodDefinition Rewrite(in NodeList<Decorator> decorators, Expression key, FunctionExpression value)
+    private MethodDefinition Rewrite(in NodeList<Decorator> decorators, Expression key, Expression value)
     {
         return new MethodDefinition(key, Computed, value, Kind, Static, decorators);
     }

@@ -1,7 +1,10 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
+using System.Xml.Linq;
 using Esprima.Ast;
+using Esprima.Ast.Adhoc;
 
 namespace Esprima;
 
@@ -104,7 +107,7 @@ public partial class AdhocAbstractSyntaxTree
     private readonly Func<Expression> _parseExpression;
     private readonly Func<Expression> _parsePrimaryExpression;
     private readonly Func<Expression> _parseGroupExpression;
-    private readonly Func<Expression> _parseArrayInitializer;
+    private readonly Func<Expression> _parseArrayOrMapInitializer;
     private readonly Func<Expression> _parseBinaryExpression;
     private readonly Func<Expression> _parseLeftHandSideExpression;
     private readonly Func<Expression> _parseLeftHandSideExpressionAllowCall;
@@ -167,7 +170,7 @@ public partial class AdhocAbstractSyntaxTree
         _parseExpression = ParseExpression;
         _parsePrimaryExpression = ParsePrimaryExpression;
         _parseGroupExpression = ParseGroupExpression;
-        _parseArrayInitializer = ParseArrayInitializer;
+        _parseArrayOrMapInitializer = ParseArrayOrMapInitializer;
         _parseBinaryExpression = ParseBinaryExpression;
         _parseLeftHandSideExpression = ParseLeftHandSideExpression;
         _parseLeftHandSideExpressionAllowCall = ParseLeftHandSideExpressionAllowCall;
@@ -220,8 +223,13 @@ public partial class AdhocAbstractSyntaxTree
             _context.Strict = strict;
 
             var node = CreateNode();
+
+            // For some reason the script only starts from the first token so startMarker is used to set the line for this.
+            // Set it to 1 otherwise #line preprocessor can cause some position/marker asserts.
+            node = new Marker(node.Index, 1, node.Column);
+
             var body = ParseDirectivePrologues();
-            while (_lookahead.Type != TokenType.EOF)
+            while (!IsEndOfFile())
             {
                 body.Push(ParseStatementListItem());
             }
@@ -272,7 +280,7 @@ public partial class AdhocAbstractSyntaxTree
 
             case TokenType.Identifier:
             case TokenType.Keyword:
-            case TokenType.NullLiteral:
+            case TokenType.NilLiteral:
             case TokenType.BooleanLiteral:
                 var stringValue = (string) token.Value!;
                 // Identifiers may contain escaped characters.
@@ -285,7 +293,6 @@ public partial class AdhocAbstractSyntaxTree
 
             // In these cases we want to intern short literals only.
             case TokenType.StringLiteral:
-            case TokenType.RegularExpression:
             case TokenType.Template:
                 return _scanner._source.Between(token.Start, token.End)
                     .ToInternedString(ref _scanner._stringPool, Scanner.NonIdentifierInterningThreshold);
@@ -307,7 +314,7 @@ public partial class AdhocAbstractSyntaxTree
 
     private protected SyntaxToken ConvertToken(in Token token)
     {
-        return FinalizeToken(token.Start, token.End, new SyntaxToken(token.Type, GetTokenRaw(token), token.RegexValue));
+        return FinalizeToken(token.Start, token.End, new SyntaxToken(token.Type, GetTokenRaw(token)));
     }
 
     private protected Token NextToken(bool allowIdentifierEscape = false)
@@ -332,28 +339,6 @@ public partial class AdhocAbstractSyntaxTree
         {
             _tokens.Add(ConvertToken(next));
         }
-
-        return token;
-    }
-
-    private Token NextRegExpToken()
-    {
-        CollectComments();
-
-        var token = _scanner.ScanRegExp();
-
-        if (_tokens is not null)
-        {
-            // Pop the previous token, '/' or '/='
-            // This is added from the lookahead token.
-            _tokens.RemoveAt(_tokens.Count - 1);
-
-            _tokens.Add(ConvertToken(token));
-        }
-
-        // Prime the next lookahead.
-        _lookahead = token;
-        NextToken();
 
         return token;
     }
@@ -421,7 +406,7 @@ public partial class AdhocAbstractSyntaxTree
         var token = NextToken(allowIdentifierEscape: true);
         if (token.Type != TokenType.Punctuator || !value.Equals((string) token.Value!, StringComparison.Ordinal))
         {
-            ThrowUnexpectedToken(token);
+            TolerateUnexpectedToken(token);
         }
     }
 
@@ -463,7 +448,22 @@ public partial class AdhocAbstractSyntaxTree
         var token = NextToken();
         if (token.Type != TokenType.Keyword || !keyword.Equals((string) token.Value!, StringComparison.Ordinal))
         {
-            ThrowUnexpectedToken(token);
+            TolerateUnexpectedToken(token);
+        }
+    }
+
+    /// <summary>
+    /// Expect the next token to match the specified keyword.
+    /// If not, an exception will be thrown.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void ExpectKeyword(params string[] keyword)
+    {
+        var token = NextToken();
+        foreach (var word in keyword)
+        {
+            if (token.Type == TokenType.Keyword && word.Equals(token.Value))
+                continue;
         }
     }
 
@@ -531,6 +531,12 @@ public partial class AdhocAbstractSyntaxTree
         return token.Type == TokenType.Identifier && keyword.Equals((string) token.Value!, StringComparison.Ordinal);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private bool IsEndOfFile()
+    {
+        return _lookahead.Type == TokenType.EOF;
+    }
+
     // Return true if the next token is an assignment operator
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -586,7 +592,7 @@ public partial class AdhocAbstractSyntaxTree
         var result = parseFunction();
         if (_context.FirstCoverInitializedNameError is not null)
         {
-            ThrowUnexpectedToken(_context.FirstCoverInitializedNameError.Value);
+            TolerateUnexpectedToken(_context.FirstCoverInitializedNameError.Value);
         }
 
         _context.IsBindingElement = previousIsBindingElement;
@@ -626,7 +632,7 @@ public partial class AdhocAbstractSyntaxTree
         {
             if (_lookahead.Type != TokenType.EOF && !Match("}"))
             {
-                ThrowUnexpectedToken(_lookahead);
+                TolerateUnexpectedToken(_lookahead);
             }
 
             _lastMarker = _startMarker;
@@ -652,16 +658,8 @@ public partial class AdhocAbstractSyntaxTree
                     TolerateUnexpectedToken(_lookahead);
                 }
 
-                if (MatchAsyncFunction())
-                {
-                    expr = ParseFunctionExpression();
-                }
-                else
-                {
-                    token = NextToken();
-                    expr = Finalize(node, new Identifier((string) token.Value!));
-                }
-
+                //token = NextToken();
+                expr = MatchAsyncFunction() ? ParseFunctionExpression() : Finalize(node, new Identifier((string) NextToken().Value!));
                 break;
 
             case TokenType.StringLiteral:
@@ -677,15 +675,7 @@ public partial class AdhocAbstractSyntaxTree
                 _context.IsBindingElement = false;
                 token = NextToken();
                 raw = GetTokenRaw(token);
-                expr = Finalize(node, new Literal(TokenType.NumericLiteral, token.Value, raw));
-                break;
-
-            case TokenType.BigIntLiteral:
-                _context.IsAssignmentTarget = false;
-                _context.IsBindingElement = false;
-                token = NextToken();
-                raw = GetTokenRaw(token);
-                expr = Finalize(node, new Literal(TokenType.BigIntLiteral, token.Value, raw));
+                expr = Finalize(node, new Literal(token.NumericTokenType, token.Value!, raw));
                 break;
 
             case TokenType.BooleanLiteral:
@@ -696,7 +686,7 @@ public partial class AdhocAbstractSyntaxTree
                 expr = Finalize(node, new Literal("true".Equals(token.Value), raw));
                 break;
 
-            case TokenType.NullLiteral:
+            case TokenType.NilLiteral:
                 _context.IsAssignmentTarget = false;
                 _context.IsBindingElement = false;
                 token = NextToken();
@@ -708,28 +698,38 @@ public partial class AdhocAbstractSyntaxTree
                 expr = ParseTemplateLiteral(false);
                 break;
 
+            case TokenType.SymbolLiteral:
+                if (_context.Strict && _lookahead.Octal)
+                {
+                    TolerateUnexpectedToken(_lookahead, Messages.StrictOctalLiteral);
+                }
+
+                _context.IsAssignmentTarget = false;
+                _context.IsBindingElement = false;
+                token = NextToken();
+                raw = GetTokenRaw(token);
+
+                expr = Finalize(node, new Literal(TokenType.SymbolLiteral, (string?) token.Value, raw));
+                break;
+
             case TokenType.Punctuator:
                 switch ((string?) _lookahead.Value)
                 {
+                    case "|": // ADHOC
+                        expr = ParseListAssignmentElementList();
+                        break;
                     case "(":
                         _context.IsBindingElement = false;
                         expr = InheritCoverGrammar(_parseGroupExpression);
                         break;
                     case "[":
-                        expr = InheritCoverGrammar(_parseArrayInitializer);
-                        break;
-                    case "/":
-                    case "/=":
-                        _context.IsAssignmentTarget = false;
-                        _context.IsBindingElement = false;
-                        _scanner._index = _startMarker.Index;
-                        token = NextRegExpToken();
-                        raw = GetTokenRaw(token);
-                        expr = Finalize(node, new RegExpLiteral(token.RegexValue!, token.RegExpParseResult, raw));
+                        expr = InheritCoverGrammar(_parseArrayOrMapInitializer);
                         break;
                     default:
                         token = NextToken();
-                        return ThrowUnexpectedToken<Expression>(token);
+                        TolerateUnexpectedToken(token);
+                        expr = new ErrorExpression();
+                        break;
                 }
 
                 break;
@@ -739,31 +739,108 @@ public partial class AdhocAbstractSyntaxTree
                 {
                     expr = ParseIdentifierName();
                 }
-                else if (!_context.Strict && MatchKeyword("let"))
-                {
-                    token = NextToken();
-                    expr = Finalize(node, new Identifier((string) token.Value!));
-                }
                 else
                 {
                     _context.IsAssignmentTarget = false;
                     _context.IsBindingElement = false;
+
                     if (MatchKeyword("function"))
                     {
                         expr = ParseFunctionExpression();
                     }
+                    else if (MatchKeyword("method"))
+                    {
+                        expr = ParseMethodExpression();
+                    }
+                    else if (MatchKeyword("self"))
+                    {
+                        NextToken();
+
+                        if (MatchKeyword("finally"))
+                        {
+                            expr = ParseSelfFinalizer();
+                        }
+                        else
+                        {
+                            expr = Finalize(node, new SelfExpression());
+                        }
+                    }
+                    else if (MatchKeyword("yield"))
+                    {
+                        expr = ParseYieldExpression();
+                    }
+                    /* ADHOC: Not available in adhoc
+                    else if (MatchKeyword("new"))
+                    {
+                        expr = ParseNewExpression();
+                    }
+                    */
+                    else if (MatchKeyword("import")) // ADHOC
+                    {
+                        var decl = ParseImportDeclaration();
+                        expr = Finalize(node, new ImportExpression(decl)); // Hack hack hack
+                    }
                     else
                     {
-                        token = NextToken();
-                        return ThrowUnexpectedToken<Expression>(token);
+                        TolerateUnexpectedToken(_lookahead);
+                        NextToken();
+
+                        return Finalize(node, new ErrorExpression());
                     }
                 }
 
                 break;
             default:
                 token = NextToken();
-                return ThrowUnexpectedToken<Expression>(token);
+                TolerateUnexpectedToken(token);
+                expr = new ErrorExpression();
+
+                break;
         }
+
+        return expr;
+    }
+
+    private Expression ParseGroupExpression()
+    {
+        Expression expr;
+
+        Expect("(");
+
+        var startToken = _lookahead;
+
+        _context.IsBindingElement = true;
+        expr = InheritCoverGrammar(_parseAssignmentExpression);
+
+        if (Match(","))
+        {
+            var expressions = new ArrayList<Expression>();
+
+            _context.IsAssignmentTarget = false;
+            expressions.Add(expr);
+            while (true)
+            {
+                if (IsEndOfFile())
+                {
+                    TolerateUnexpectedToken(_lookahead);
+                    break;
+                }
+
+                if (!Match(","))
+                {
+                    break;
+                }
+
+                NextToken();
+                expressions.Add(InheritCoverGrammar(_parseAssignmentExpression));
+            }
+
+            expr = Finalize(StartNode(startToken), new SequenceExpression(NodeList.From(ref expressions)));
+        }
+
+        Expect(")");
+
+        _context.IsBindingElement = false;
 
         return expr;
     }
@@ -774,20 +851,20 @@ public partial class AdhocAbstractSyntaxTree
         switch (token.NotEscapeSequenceHead)
         {
             case 'u':
-                ThrowUnexpectedToken(token, Messages.InvalidUnicodeEscapeSequence);
+                TolerateUnexpectedToken(token, Messages.InvalidUnicodeEscapeSequence);
                 break;
             case 'v':
-                ThrowUnexpectedToken(token, Messages.UndefinedUnicodeCodePoint);
+                TolerateUnexpectedToken(token, Messages.UndefinedUnicodeCodePoint);
                 break;
             case 'x':
-                ThrowUnexpectedToken(token, Messages.InvalidHexEscapeSequence);
+                TolerateUnexpectedToken(token, Messages.InvalidHexEscapeSequence);
                 break;
             case '8':
             case '9':
-                ThrowUnexpectedToken(token, Messages.TemplateEscape89);
+                TolerateUnexpectedToken(token, Messages.TemplateEscape89);
                 break;
             default: // For 0-7
-                ThrowUnexpectedToken(token, Messages.TemplateOctalLiteral);
+                TolerateUnexpectedToken(token, Messages.TemplateOctalLiteral);
                 break;
         }
     }
@@ -800,48 +877,6 @@ public partial class AdhocAbstractSyntaxTree
         Expect("...");
         var arg = InheritCoverGrammar(_parseAssignmentExpression);
         return Finalize(node, new SpreadElement(arg));
-    }
-
-    private ArrayExpression ParseArrayInitializer()
-    {
-        var node = CreateNode();
-        var elements = new ArrayList<Expression?>();
-
-        Expect("[");
-
-        while (!Match("]"))
-        {
-            if (Match(","))
-            {
-                NextToken();
-                elements.Add(null);
-            }
-            else if (Match("..."))
-            {
-                var element = ParseSpreadElement();
-                if (!Match("]"))
-                {
-                    _context.IsAssignmentTarget = false;
-                    _context.IsBindingElement = false;
-                    Expect(",");
-                }
-
-                elements.Add(element);
-            }
-            else
-            {
-                elements.Add(InheritCoverGrammar(_parseAssignmentExpression));
-
-                if (!Match("]"))
-                {
-                    Expect(",");
-                }
-            }
-        }
-
-        Expect("]");
-
-        return Finalize(node, new ArrayExpression(NodeList.From(ref elements)));
     }
 
     // https://tc39.github.io/ecma262/#sec-object-initializer
@@ -875,35 +910,6 @@ public partial class AdhocAbstractSyntaxTree
         return body;
     }
 
-    private FunctionExpression ParsePropertyMethodFunction(bool isAsync, bool isGenerator, bool allowSuperCall)
-    {
-        var node = CreateNode();
-
-        var previousInClassStaticBlock = _context.InClassStaticBlock;
-        var previousIsAsync = _context.IsAsync;
-        var previousAllowYield = _context.AllowYield;
-        var previousAllowSuperAccess = _context.AllowSuperAccess;
-        var previousAllowSuperCall = _context.AllowSuperCall;
-
-        _context.InClassStaticBlock = false;
-        _context.IsAsync = isAsync;
-        _context.AllowYield = true;
-        _context.AllowSuperAccess = true;
-        _context.AllowSuperCall = allowSuperCall;
-        var parameters = ParseFormalParameters();
-
-        _context.AllowYield = !isGenerator;
-        var method = ParsePropertyMethod(ref parameters, out var hasStrictDirective);
-
-        _context.IsAsync = previousIsAsync;
-        _context.AllowYield = previousAllowYield;
-        _context.AllowSuperAccess = previousAllowSuperAccess;
-        _context.AllowSuperCall = previousAllowSuperCall;
-        _context.InClassStaticBlock = previousInClassStaticBlock;
-
-        return Finalize(node, new FunctionExpression(null, NodeList.From(ref parameters.Parameters), method, isGenerator, hasStrictDirective, isAsync));
-    }
-
     // https://tc39.github.io/ecma262/#sec-template-literals
 
     private TemplateElement ParseTemplateHead(bool isTagged)
@@ -917,7 +923,7 @@ public partial class AdhocAbstractSyntaxTree
             ThrowTemplateLiteralEarlyErrors(token);
         }
 
-        var value = new TemplateElement.TemplateElementValue(Raw: token.RawTemplate!, Cooked: (string) token.Value!);
+        var value = new TemplateElement.TemplateElementValue(Raw: token.RawTemplate!, Cooked: (string) token.Value!, HasHexEscape: token.HasHexEscape);
 
         return Finalize(node, new TemplateElement(value, token.Tail));
     }
@@ -926,7 +932,7 @@ public partial class AdhocAbstractSyntaxTree
     {
         if (_lookahead.Type != TokenType.Template)
         {
-            ThrowUnexpectedToken();
+            TolerateUnexpectedToken(_lookahead);
         }
 
         var node = CreateNode();
@@ -936,7 +942,7 @@ public partial class AdhocAbstractSyntaxTree
             ThrowTemplateLiteralEarlyErrors(token);
         }
 
-        var value = new TemplateElement.TemplateElementValue(Raw: token.RawTemplate!, Cooked: (string) token.Value!);
+        var value = new TemplateElement.TemplateElementValue(Raw: token.RawTemplate!, Cooked: (string) token.Value!, HasHexEscape: token.HasHexEscape);
 
         return Finalize(node, new TemplateElement(value, token.Tail));
     }
@@ -949,12 +955,21 @@ public partial class AdhocAbstractSyntaxTree
         var quasis = new ArrayList<TemplateElement>();
 
         var quasi = ParseTemplateHead(isTagged);
-        quasis.Add(quasi);
+        if (!string.IsNullOrEmpty(quasi.Value.Cooked) || quasi.Tail)
+            quasis.Add(quasi);
+
         while (!quasi.Tail)
         {
+            if (IsEndOfFile())
+            {
+                TolerateUnexpectedToken(_lookahead);
+                break;
+            }
+
             expressions.Add(ParseExpression());
             quasi = ParseTemplateElement(isTagged);
-            quasis.Add(quasi);
+            if (!string.IsNullOrEmpty(quasi.Value.Cooked))
+                quasis.Add(quasi);
         }
 
         return Finalize(node, new TemplateLiteral(NodeList.From(ref quasis), NodeList.From(ref expressions)));
@@ -962,14 +977,14 @@ public partial class AdhocAbstractSyntaxTree
 
     // https://tc39.github.io/ecma262/#sec-grouping-operator
 
-    private static Node ReinterpretExpressionAsPattern(Node expr)
+    private static Expression ReinterpretExpressionAsPattern(Expression expr)
     {
         // In esprima this method mutates the expression that is passed as a parameter.
         // Because the type property is mutated we need to change the behavior to cloning
         // it instead. As a matter of fact the callers need to replace the actual value that
         // was sent by the returned one.
 
-        Node node = expr;
+        Expression node = expr;
 
         switch (expr.Type)
         {
@@ -1005,26 +1020,7 @@ public partial class AdhocAbstractSyntaxTree
                 node.Location = expr.Location;
 
                 break;
-            case Nodes.ObjectExpression:
-                var properties = new ArrayList<Node>();
-                foreach (var property in expr.As<ObjectExpression>().Properties)
-                {
-                    if (property is Property p)
-                    {
-                        p._value = ReinterpretExpressionAsPattern(p.Value);
-                        properties.Add(p);
-                    }
-                    else
-                    {
-                        properties.Add(ReinterpretExpressionAsPattern(property!));
-                    }
-                }
 
-                node = new ObjectPattern(NodeList.From(ref properties));
-                node.Range = expr.Range;
-                node.Location = expr.Location;
-
-                break;
             case Nodes.AssignmentExpression:
                 var assignmentExpression = expr.As<AssignmentExpression>();
                 node = new AssignmentPattern(assignmentExpression.Left, assignmentExpression.Right);
@@ -1040,170 +1036,6 @@ public partial class AdhocAbstractSyntaxTree
         return node;
     }
 
-    private Expression ParseGroupExpression()
-    {
-        Expression expr;
-
-        Expect("(");
-        if (Match(")"))
-        {
-            NextToken();
-            if (!Match("=>"))
-            {
-                Expect("=>");
-            }
-
-            expr = ArrowParameterPlaceHolder.Empty;
-        }
-        else
-        {
-            var startToken = _lookahead;
-            if (Match("..."))
-            {
-                var parameters = _parseVariableBindingParameters ?? new ArrayList<Token>();
-                _parseVariableBindingParameters = null;
-                parameters.Clear();
-
-                var rest = ParseRestElement(ref parameters);
-
-                _parseVariableBindingParameters = parameters;
-
-                Expect(")");
-                if (!Match("=>"))
-                {
-                    Expect("=>");
-                }
-
-                expr = new ArrowParameterPlaceHolder(new NodeList<Node>(new Node[] { rest }, 1), false);
-            }
-            else
-            {
-                var arrow = false;
-                _context.IsBindingElement = true;
-                expr = InheritCoverGrammar(_parseAssignmentExpression);
-
-                if (Match(","))
-                {
-                    expr = ParseSequenceExpression(expr, startToken, ref arrow);
-                }
-
-                if (!arrow)
-                {
-                    Expect(")");
-                    if (Match("=>"))
-                    {
-                        if (expr.Type == Nodes.Identifier && ((Identifier) expr).Name == "yield")
-                        {
-                            expr = new ArrowParameterPlaceHolder(new NodeList<Node>(new[] { expr }, 1), false);
-                        }
-                        else
-                        {
-                            if (!_context.IsBindingElement)
-                            {
-                                ThrowUnexpectedToken(_lookahead);
-                            }
-
-                            if (expr.Type == Nodes.SequenceExpression)
-                            {
-                                var sequenceExpression = expr.As<SequenceExpression>();
-                                var reinterpretedExpressions = new ArrayList<Node>();
-                                foreach (var expression in sequenceExpression.Expressions)
-                                {
-                                    reinterpretedExpressions.Add(ReinterpretExpressionAsPattern(expression));
-                                }
-
-                                expr = new ArrowParameterPlaceHolder(NodeList.From(ref reinterpretedExpressions), false);
-                            }
-                            else
-                            {
-                                expr = new ArrowParameterPlaceHolder(new NodeList<Node>(new[] { ReinterpretExpressionAsPattern(expr) }, 1), false);
-                            }
-                        }
-                    }
-
-                    _context.IsBindingElement = false;
-                }
-            }
-        }
-
-        return expr;
-    }
-
-    private Expression ParseSequenceExpression(Expression expr, in Token startToken, ref bool arrow)
-    {
-        var expressions = new ArrayList<Expression>();
-
-        _context.IsAssignmentTarget = false;
-        expressions.Add(expr);
-        while (_lookahead.Type != TokenType.EOF)
-        {
-            if (!Match(","))
-            {
-                break;
-            }
-
-            NextToken();
-            if (Match(")"))
-            {
-                NextToken();
-                var reinterpretedExpressions = new ArrayList<Node>(initialCapacity: expressions.Count);
-                for (var i = 0; i < expressions.Count; i++)
-                {
-                    reinterpretedExpressions.Add(ReinterpretExpressionAsPattern(expressions[i]));
-                }
-
-                arrow = true;
-                expr = new ArrowParameterPlaceHolder(NodeList.From(ref reinterpretedExpressions), false);
-                break;
-            }
-            else if (Match("..."))
-            {
-                if (!_context.IsBindingElement)
-                {
-                    ThrowUnexpectedToken(_lookahead);
-                }
-
-                var parameters = _parseVariableBindingParameters ?? new ArrayList<Token>();
-                _parseVariableBindingParameters = null;
-                parameters.Clear();
-
-                var restElement = ParseRestElement(ref parameters);
-
-                _parseVariableBindingParameters = parameters;
-
-                Expect(")");
-                if (!Match("=>"))
-                {
-                    Expect("=>");
-                }
-
-                _context.IsBindingElement = false;
-                var reinterpretedExpressions = new ArrayList<Node>(initialCapacity: expressions.Count + 1);
-                foreach (var expression in expressions)
-                {
-                    reinterpretedExpressions.Add(ReinterpretExpressionAsPattern(expression));
-                }
-
-                reinterpretedExpressions.Add(restElement);
-
-                arrow = true;
-                expr = new ArrowParameterPlaceHolder(NodeList.From(ref reinterpretedExpressions), false);
-                break;
-            }
-            else
-            {
-                expressions.Add(InheritCoverGrammar(_parseAssignmentExpression));
-            }
-        }
-
-        if (!arrow)
-        {
-            expr = Finalize(StartNode(startToken), new SequenceExpression(NodeList.From(ref expressions)));
-        }
-
-        return expr;
-    }
-
     // https://tc39.github.io/ecma262/#sec-left-hand-side-expressions
 
     private NodeList<Expression> ParseArguments()
@@ -1216,6 +1048,12 @@ public partial class AdhocAbstractSyntaxTree
         {
             while (true)
             {
+                if (IsEndOfFile())
+                {
+                    TolerateUnexpectedToken(_lookahead);
+                    break;
+                }
+
                 var expr = Match("...")
                     ? ParseSpreadElement()
                     : IsolateCoverGrammar(_parseAssignmentExpression);
@@ -1244,7 +1082,7 @@ public partial class AdhocAbstractSyntaxTree
         return token.Type == TokenType.Identifier ||
                token.Type == TokenType.Keyword ||
                token.Type == TokenType.BooleanLiteral ||
-               token.Type == TokenType.NullLiteral;
+               token.Type == TokenType.NilLiteral;
     }
 
     private Identifier ParseIdentifierName()
@@ -1255,21 +1093,7 @@ public partial class AdhocAbstractSyntaxTree
 
         if (!IsIdentifierName(token))
         {
-            return ThrowUnexpectedToken<Identifier>(token);
-        }
-
-        return Finalize(node, new Identifier((string) token.Value!));
-    }
-
-    private Identifier ParseIdentifierOrPrivateIdentifierName()
-    {
-        var node = CreateNode();
-
-        var token = NextToken();
-
-        if (!IsIdentifierName(token))
-        {
-            return ThrowUnexpectedToken<Identifier>(token);
+            TolerateUnexpectedToken(token);
         }
 
         return Finalize(node, new Identifier((string) token.Value!));
@@ -1291,6 +1115,12 @@ public partial class AdhocAbstractSyntaxTree
         {
             while (true)
             {
+                if (IsEndOfFile())
+                {
+                    TolerateUnexpectedToken(_lookahead);
+                    break;
+                }
+
                 var expr = Match("...") ? ParseSpreadElement() : IsolateCoverGrammar(_parseAsyncArgument);
                 args.Add(expr);
                 if (Match(")"))
@@ -1319,18 +1149,43 @@ public partial class AdhocAbstractSyntaxTree
         var previousAllowIn = _context.AllowIn;
         _context.AllowIn = true;
 
+        bool isTopLevelScopeResolution = Match("::");
+        var node = CreateNode();
+        if (isTopLevelScopeResolution)
+            NextToken();
+
         Expression expr = InheritCoverGrammar(_parsePrimaryExpression);
+        if (isTopLevelScopeResolution)
+        {
+            if (expr.Type == Nodes.Identifier)
+            {
+                if (!Match("::")) // Pointless if next is scope navigation
+                {
+                    expr = Finalize(node, new StaticIdentifier((Identifier) expr));
+                }
+            }
+            else
+            {
+                TolerateError("Scope resolution operator prefix is only applicable to identifiers");
+            }
+        }
 
         var hasOptional = false;
-        var hasCall = false;
         while (true)
         {
+            if (IsEndOfFile())
+            {
+                TolerateUnexpectedToken(_lookahead);
+                break;
+            }
+
             var optional = false;
+            var isComputedOptional = false;
             if (Match("?."))
             {
                 if (_context.MemberAccessContext == MemberAccessContext.Decorator)
                 {
-                    ThrowError(Messages.InvalidDecoratorMemberExpression);
+                    TolerateError(Messages.InvalidDecoratorMemberExpression);
                 }
 
                 optional = true;
@@ -1338,22 +1193,34 @@ public partial class AdhocAbstractSyntaxTree
                 Expect("?.");
             }
 
+            if (Match("?["))
+            {
+                optional = true;
+                hasOptional = true;
+                isComputedOptional = true;
+                Expect("?[");
+            }
+
             if (Match("("))
             {
-                if (hasCall && _context.MemberAccessContext == MemberAccessContext.Decorator)
-                {
-                    ThrowError(Messages.InvalidDecoratorMemberExpression);
-                }
-
-                hasCall = true;
-
                 expr = ParseCallExpression(maybeAsync, startMarker, expr, optional);
+            }
+            else if (Match(".*"))
+            {
+                NextToken();
+
+                _context.IsBindingElement = false;
+                _context.IsAssignmentTarget = !optional;
+
+                var property = IsolateCoverGrammar(_parseLeftHandSideExpressionAllowCall);
+                expr = Finalize(startMarker, new ObjectSelectorMemberExpression(expr, property, optional));
             }
             else if (Match("["))
             {
                 if (_context.MemberAccessContext == MemberAccessContext.Decorator)
                 {
-                    ThrowError(Messages.InvalidDecoratorMemberExpression);
+                    TolerateError(Messages.InvalidDecoratorMemberExpression);
+                    break;
                 }
 
                 _context.IsBindingElement = false;
@@ -1363,23 +1230,28 @@ public partial class AdhocAbstractSyntaxTree
                 Expect("]");
                 expr = Finalize(startMarker, new ComputedMemberExpression(expr, property, optional));
             }
+            else if (isComputedOptional)
+            {
+                _context.IsBindingElement = false;
+                _context.IsAssignmentTarget = !optional;
+
+                var property = IsolateCoverGrammar(_parseExpression);
+                Expect("]");
+                expr = Finalize(startMarker, new ComputedMemberExpression(expr, property, optional));
+            }
             else if (_lookahead.Type == TokenType.Template && _lookahead.Head)
             {
-                if (_context.MemberAccessContext == MemberAccessContext.Decorator)
-                {
-                    ThrowError(Messages.InvalidDecoratorMemberExpression);
-                }
-
                 // Optional template literal is not included in the spec.
                 // https://github.com/tc39/proposal-optional-chaining/issues/54
                 if (optional)
                 {
-                    ThrowUnexpectedToken(_lookahead);
+                    TolerateUnexpectedToken(_lookahead);
                 }
 
                 if (hasOptional)
                 {
-                    ThrowError(Messages.InvalidTaggedTemplateOnOptionalChain);
+                    TolerateError(Messages.InvalidTaggedTemplateOnOptionalChain);
+                    break;
                 }
 
                 var quasi = ParseTemplateLiteral(true);
@@ -1387,24 +1259,41 @@ public partial class AdhocAbstractSyntaxTree
             }
             else if (Match(".") || optional)
             {
-                if (hasCall && _context.MemberAccessContext == MemberAccessContext.Decorator)
-                {
-                    ThrowError(Messages.InvalidDecoratorMemberExpression);
-                }
-
-                var previousAllowIdentifierEscape = _context.AllowIdentifierEscape;
-
                 _context.IsBindingElement = false;
                 _context.IsAssignmentTarget = !optional;
-                _context.AllowIdentifierEscape = true;
                 if (!optional)
                 {
                     Expect(".");
                 }
 
-                var property = ParseIdentifierOrPrivateIdentifierName();
+                Expression property = ParseIdentifierName();
 
-                _context.AllowIdentifierEscape = previousAllowIdentifierEscape;
+                while (Match("::"))
+                {
+                    if (IsEndOfFile())
+                    {
+                        TolerateUnexpectedToken(_lookahead);
+                        break;
+                    }
+
+                    NextToken();
+                    var property2 = ParseIdentifierName();
+
+                    property = Finalize(startMarker, new StaticMemberExpression(property, property2, optional)); // TODO: Check if this is valid (marker)
+                }
+
+                expr = Finalize(startMarker, new AttributeMemberExpression(expr, property, optional));
+            }
+            else if (Match("::") || optional)
+            {
+                _context.IsBindingElement = false;
+                _context.IsAssignmentTarget = !optional;
+                if (!optional)
+                {
+                    Expect("::");
+                }
+
+                var property = ParseIdentifierName();
                 expr = Finalize(startMarker, new StaticMemberExpression(expr, property, optional));
             }
             else
@@ -1431,17 +1320,6 @@ public partial class AdhocAbstractSyntaxTree
         var args = asyncArrow ? ParseAsyncArguments() : ParseArguments();
 
         Expression expr = Finalize(startToken, new CallExpression(callee, args, optional));
-        if (asyncArrow && Match("=>"))
-        {
-            var nodeArguments = new ArrayList<Node>();
-            for (var i = 0; i < args.Count; ++i)
-            {
-                nodeArguments.Add(ReinterpretExpressionAsPattern(args[i]));
-            }
-
-            expr = new ArrowParameterPlaceHolder(NodeList.From(ref nodeArguments), true);
-        }
-
         return expr;
     }
 
@@ -1455,14 +1333,15 @@ public partial class AdhocAbstractSyntaxTree
         var hasOptional = false;
         while (true)
         {
+            if (IsEndOfFile())
+            {
+                TolerateUnexpectedToken(_lookahead);
+                break;
+            }
+
             var optional = false;
             if (Match("?."))
             {
-                if (_context.MemberAccessContext == MemberAccessContext.NewExpressionCallee)
-                {
-                    ThrowError(Messages.InvalidOptionalChainFromNewExpression);
-                }
-
                 optional = true;
                 hasOptional = true;
                 Expect("?.");
@@ -1483,12 +1362,13 @@ public partial class AdhocAbstractSyntaxTree
                 // https://github.com/tc39/proposal-optional-chaining/issues/54
                 if (optional)
                 {
-                    ThrowUnexpectedToken(_lookahead);
+                    TolerateUnexpectedToken(_lookahead);
                 }
 
                 if (hasOptional)
                 {
-                    ThrowError(Messages.InvalidTaggedTemplateOnOptionalChain);
+                    TolerateError(Messages.InvalidTaggedTemplateOnOptionalChain);
+                    break;
                 }
 
                 var quasi = ParseTemplateLiteral(true);
@@ -1505,6 +1385,18 @@ public partial class AdhocAbstractSyntaxTree
 
                 var property = ParseIdentifierName();
 
+                expr = Finalize(startMarker, new AttributeMemberExpression(expr, property, optional));
+            }
+            else if (Match("::") || optional) // ADHOC: Static
+            {
+                _context.IsBindingElement = false;
+                _context.IsAssignmentTarget = !optional;
+                if (!optional)
+                {
+                    Expect("::");
+                }
+
+                var property = ParseIdentifierName();
                 expr = Finalize(startMarker, new StaticMemberExpression(expr, property, optional));
             }
             else
@@ -1590,7 +1482,7 @@ public partial class AdhocAbstractSyntaxTree
     private Expression ParseUnaryExpression()
     {
         Expression expr;
-        if (MatchAny('+', '-', '~', '!'))
+        if (MatchAny('+', '-', '~', '!') || MatchAny('*', '&', '*', '&')) // ADHOC: Added * and &
         {
             expr = ParseBasicUnaryExpression();
         }
@@ -1613,21 +1505,18 @@ public partial class AdhocAbstractSyntaxTree
 
     private UnaryExpression ParseBasicUnaryExpression()
     {
+        bool canAssign = Match("*") || Match("&");
+
         var startMarker = StartNode(_lookahead);
         var token = NextToken();
         var expr = InheritCoverGrammar(_parseUnaryExpression);
         var unaryExpr = Finalize(startMarker, new UnaryExpression((string) token.Value!, expr));
-        if (_context.Strict && unaryExpr.Operator == UnaryOperator.Delete && unaryExpr.Argument.Type == Nodes.Identifier)
-        {
-            TolerateError(Messages.StrictDelete);
-        }
-        if (_context.Strict && unaryExpr.Operator == UnaryOperator.Delete && unaryExpr.Argument is MemberExpression { Property: PrivateIdentifier })
-        {
-            TolerateError(Messages.PrivateFieldNoDelete);
-        }
 
-        _context.IsAssignmentTarget = false;
-        _context.IsBindingElement = false;
+        if (!canAssign)
+        {
+            _context.IsAssignmentTarget = false;
+            _context.IsBindingElement = false;
+        }
         return unaryExpr;
     }
 
@@ -1826,6 +1715,12 @@ public partial class AdhocAbstractSyntaxTree
 
             while (true)
             {
+                if (IsEndOfFile())
+                {
+                    TolerateUnexpectedToken(_lookahead);
+                    break;
+                }
+
                 prec = BinaryPrecedence(_lookahead);
                 if (prec <= 0)
                 {
@@ -1835,7 +1730,8 @@ public partial class AdhocAbstractSyntaxTree
                 if (!allowAndOr && ("&&".Equals(_lookahead.Value) || "||".Equals(_lookahead.Value)) ||
                     !allowNullishCoalescing && "??".Equals(_lookahead.Value))
                 {
-                    ThrowUnexpectedToken(_lookahead);
+                    TolerateUnexpectedToken(_lookahead);
+                    break;
                 }
 
                 UpdateNullishCoalescingRestrictions(_lookahead, ref allowAndOr, ref allowNullishCoalescing);
@@ -1930,15 +1826,6 @@ public partial class AdhocAbstractSyntaxTree
                 }
 
                 break;
-            case Nodes.ObjectPattern:
-                ref readonly var nodes = ref param.As<ObjectPattern>().Properties;
-                for (var i = 0; i < nodes.Count; i++)
-                {
-                    var property = nodes[i];
-                    CheckPatternParam(ref options, property is Property p ? p.Value : property);
-                }
-
-                break;
         }
 
         options.Simple = options.Simple && param is Identifier;
@@ -1946,20 +1833,15 @@ public partial class AdhocAbstractSyntaxTree
 
     private ParsedParameters? ReinterpretAsCoverFormalsList(Expression expr)
     {
-        ArrayList<Node> parameters;
+        ArrayList<Expression> parameters;
         var asyncArrow = false;
 
         switch (expr.Type)
         {
             case Nodes.Identifier:
-                parameters = new ArrayList<Node>(new Node[] { expr });
+                parameters = new ArrayList<Expression>(new Expression[] { expr });
                 break;
-            case ArrowParameterPlaceHolder.NodeType:
-                // TODO clean-up
-                var arrowParameterPlaceHolder = expr.As<ArrowParameterPlaceHolder>();
-                parameters = ArrayList.Create(arrowParameterPlaceHolder.Params);
-                asyncArrow = arrowParameterPlaceHolder.Async;
-                break;
+
             default:
                 return null;
         }
@@ -1977,7 +1859,7 @@ public partial class AdhocAbstractSyntaxTree
                     var yieldExpression = assignment.Right.As<YieldExpression>();
                     if (yieldExpression.Argument != null)
                     {
-                        ThrowUnexpectedToken(_lookahead);
+                        TolerateUnexpectedToken(_lookahead);
                     }
 
                     assignment._right = new Identifier("yield") { Location = assignment.Right.Location, Range = assignment.Right.Range };
@@ -1985,7 +1867,7 @@ public partial class AdhocAbstractSyntaxTree
             }
             else if (asyncArrow && param.Type == Nodes.Identifier && param.As<Identifier>().Name == "await")
             {
-                ThrowUnexpectedToken(_lookahead);
+                TolerateUnexpectedToken(_lookahead);
             }
 
             CheckPatternParam(ref options, param);
@@ -1999,7 +1881,7 @@ public partial class AdhocAbstractSyntaxTree
                 var param = parameters[i];
                 if (param.Type == Nodes.YieldExpression)
                 {
-                    ThrowUnexpectedToken(_lookahead);
+                    TolerateUnexpectedToken(_lookahead);
                 }
             }
         }
@@ -2007,7 +1889,7 @@ public partial class AdhocAbstractSyntaxTree
         if (options.HasDuplicateParameterNames)
         {
             var token = _context.Strict ? options.Stricted : options.FirstRestricted;
-            ThrowUnexpectedToken(token ?? default, Messages.DuplicateParameter);
+            TolerateUnexpectedToken(token ?? default, Messages.DuplicateParameter);
         }
 
         return new ParsedParameters
@@ -2028,7 +1910,7 @@ public partial class AdhocAbstractSyntaxTree
 
         if (_assignmentDepth++ > _maxAssignmentDepth)
         {
-            ThrowUnexpectedToken(_lookahead, "Maximum statements depth reached");
+            TolerateUnexpectedToken(_lookahead, "Maximum statements depth reached");
         }
 
         if (!_context.AllowYield && MatchKeyword("yield"))
@@ -2045,109 +1927,30 @@ public partial class AdhocAbstractSyntaxTree
                 expr = ParseConditionalExpression(expr, StartNode(token));
             }
 
-            if (token.Type == TokenType.Identifier && token.LineNumber == _lookahead.LineNumber && (string?) token.Value == "async")
+            if (MatchAssign())
             {
-                if (_lookahead.Type == TokenType.Identifier || MatchKeyword("yield"))
+                if (!_context.IsAssignmentTarget)
                 {
-                    var arg = ParsePrimaryExpression();
-                    ReinterpretExpressionAsPattern(arg);
-                    var args = new[] { arg };
-                    expr = new ArrowParameterPlaceHolder(new NodeList<Node>(args, 1), true);
+                    TolerateError(Messages.InvalidLHSInAssignment);
                 }
-            }
 
-            if (expr.Type == ArrowParameterPlaceHolder.NodeType || Match("=>"))
-            {
-                // https://tc39.github.io/ecma262/#sec-arrow-function-definitions
-                _context.IsAssignmentTarget = false;
-                _context.IsBindingElement = false;
+                Expression left;
 
-                var isAsync = expr is ArrowParameterPlaceHolder { Async: true };
-                var result = ReinterpretAsCoverFormalsList(expr);
-
-                if (result != null)
+                if (!Match("="))
                 {
-                    var list = result.Value;
-                    if (_hasLineTerminator)
-                    {
-                        TolerateUnexpectedToken(_lookahead);
-                    }
-
-                    _context.FirstCoverInitializedNameError = null;
-
-                    var previousStrict = _context.Strict;
-                    var previousAllowStrictDirective = _context.AllowStrictDirective;
-                    _context.AllowStrictDirective = list.Simple;
-
-                    var previousAllowYield = _context.AllowYield;
-                    var previousIsAsync = _context.IsAsync;
-                    _context.AllowYield = true;
-                    _context.IsAsync = isAsync;
-
-                    var node = StartNode(token);
-                    Expect("=>");
-
-                    StatementListItem body;
-                    if (Match("{"))
-                    {
-                        var previousAllowIn = _context.AllowIn;
-                        _context.AllowIn = true;
-                        body = ParseFunctionSourceElements();
-                        _context.AllowIn = previousAllowIn;
-                    }
-                    else
-                    {
-                        body = IsolateCoverGrammar(_parseAssignmentExpression);
-                    }
-
-                    var expression = body.Type != Nodes.BlockStatement;
-
-                    if (_context.Strict && list.FirstRestricted != null)
-                    {
-                        ThrowUnexpectedToken(list.FirstRestricted.Value, list.Message);
-                    }
-
-                    if (_context.Strict && list.Stricted != null)
-                    {
-                        TolerateUnexpectedToken(list.Stricted.Value, list.Message);
-                    }
-
-                    var listParameters = list.Parameters;
-                    expr = Finalize(node, new ArrowFunctionExpression(NodeList.From(ref listParameters), body, expression, _context.Strict, isAsync));
-
-                    _context.Strict = previousStrict;
-                    _context.AllowStrictDirective = previousAllowStrictDirective;
-                    _context.AllowYield = previousAllowYield;
-                    _context.IsAsync = previousIsAsync;
+                    _context.IsAssignmentTarget = false;
+                    _context.IsBindingElement = false;
+                    left = expr;
                 }
-            }
-            else
-            {
-                if (MatchAssign())
+                else
                 {
-                    if (!_context.IsAssignmentTarget)
-                    {
-                        TolerateError(Messages.InvalidLHSInAssignment);
-                    }
-
-                    Node left;
-
-                    if (!Match("="))
-                    {
-                        _context.IsAssignmentTarget = false;
-                        _context.IsBindingElement = false;
-                        left = expr;
-                    }
-                    else
-                    {
-                        left = ReinterpretExpressionAsPattern(expr);
-                    }
-
-                    var next = NextToken();
-                    var right = IsolateCoverGrammar(_parseAssignmentExpression);
-                    expr = Finalize(StartNode(token), new AssignmentExpression((string) next.Value!, left, right));
-                    _context.FirstCoverInitializedNameError = null;
+                    left = ReinterpretExpressionAsPattern(expr);
                 }
+
+                var next = NextToken();
+                var right = IsolateCoverGrammar(_parseAssignmentExpression);
+                expr = Finalize(StartNode(token), new AssignmentExpression((string) next.Value!, left, right));
+                _context.FirstCoverInitializedNameError = null;
             }
         }
 
@@ -2219,7 +2022,14 @@ public partial class AdhocAbstractSyntaxTree
                     statement = ParseImportDeclaration();
                     break;
                 case "function":
-                    statement = ParseFunctionDeclaration();
+                case "method":
+                    statement = ParseSubroutineDeclaration();
+                    break;
+                case "module":
+                    statement = ParseModuleDeclaration();
+                    break;
+                case "class":
+                    statement = ParseClassDeclaration();
                     break;
                 default:
                     statement = ParseStatement();
@@ -2242,6 +2052,12 @@ public partial class AdhocAbstractSyntaxTree
         var block = new ArrayList<Statement>();
         while (true)
         {
+            if (IsEndOfFile())
+            {
+                TolerateUnexpectedToken(_lookahead);
+                break;
+            }
+
             if (Match("}"))
             {
                 break;
@@ -2272,28 +2088,13 @@ public partial class AdhocAbstractSyntaxTree
         _parseVariableBindingParameters = parameters;
 
         Expression? init = null;
-        if (kind == VariableDeclarationKind.Const)
-        {
-            if (!MatchKeyword("in") && !MatchContextualKeyword("of"))
-            {
-                if (Match("="))
-                {
-                    NextToken();
-                    init = IsolateCoverGrammar(_parseAssignmentExpression);
-                }
-                else
-                {
-                    return ThrowError<VariableDeclarator>(Messages.DeclarationMissingInitializer, "const");
-                }
-            }
-        }
-        else if (!inFor && id.Type != Nodes.Identifier || Match("="))
+        if (!inFor && id.Type != Nodes.Identifier || Match("="))
         {
             Expect("=");
             init = IsolateCoverGrammar(_parseAssignmentExpression);
         }
 
-        return Finalize(node, new VariableDeclarator(id, init));
+        return Finalize(node, new VariableDeclarator((Identifier) id!, init));
     }
 
     private NodeList<VariableDeclarator> ParseBindingList(VariableDeclarationKind kind, bool inFor)
@@ -2327,13 +2128,19 @@ public partial class AdhocAbstractSyntaxTree
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private VariableDeclarationKind ParseVariableDeclarationKind(string? kindString)
     {
-        return kindString switch
+        VariableDeclarationKind kind = kindString switch
         {
-            "const" => VariableDeclarationKind.Const,
-            "let" => VariableDeclarationKind.Let,
             "var" => VariableDeclarationKind.Var,
-            _ => ThrowError<VariableDeclarationKind>("Unknown declaration kind '{0}'", kindString)
+            "static" => VariableDeclarationKind.Static,
+            "attribute" => VariableDeclarationKind.Attribute,
+            "delegate" => VariableDeclarationKind.Delegate,
+            _ => VariableDeclarationKind.Invalid
         };
+
+        if (kind == VariableDeclarationKind.Invalid)
+            TolerateError("Unknown declaration kind '{0}'", kindString);
+
+        return kind;
     }
 
     // https://tc39.github.io/ecma262/#sec-destructuring-binding-patterns
@@ -2356,6 +2163,12 @@ public partial class AdhocAbstractSyntaxTree
         var elements = new ArrayList<Node?>();
         while (!Match("]"))
         {
+            if (IsEndOfFile())
+            {
+                TolerateUnexpectedToken(_lookahead);
+                break;
+            }
+
             if (Match(","))
             {
                 NextToken();
@@ -2370,7 +2183,7 @@ public partial class AdhocAbstractSyntaxTree
                 }
                 else
                 {
-                    elements.Push(ParsePatternWithDefault(ref parameters, kind));
+                    elements.Push(ParsePatternWithDefault(ref parameters, kind, arrayPattern: true));
                 }
 
                 if (!Match("]"))
@@ -2385,51 +2198,62 @@ public partial class AdhocAbstractSyntaxTree
         return Finalize(node, new ArrayPattern(NodeList.From(ref elements)));
     }
 
-    private RestElement ParseRestProperty(ref ArrayList<Token> parameters, VariableDeclarationKind? kind)
+    private Expression ParseRestProperty(ref ArrayList<Token> parameters, VariableDeclarationKind? kind)
     {
         var node = CreateNode();
         Expect("...");
         var arg = ParsePattern(ref parameters);
         if (Match("="))
         {
-            ThrowError(Messages.DefaultRestProperty);
+            TolerateError(Messages.DefaultRestProperty);
+            return Finalize(node, new ErrorExpression());
         }
 
         if (!Match("}"))
         {
-            ThrowError(Messages.PropertyAfterRestProperty);
+            TolerateError(Messages.PropertyAfterRestProperty);
+            return Finalize(node, new ErrorExpression());
         }
 
         return Finalize(node, new RestElement(arg));
     }
 
-    private Node ParsePattern(ref ArrayList<Token> parameters, VariableDeclarationKind? kind = null)
+    private Expression ParsePattern(ref ArrayList<Token> parameters, VariableDeclarationKind? kind = null, bool arrayPattern = false)
     {
-        Node pattern;
+        Expression pattern;
 
         if (Match("["))
         {
             pattern = ParseArrayPattern(ref parameters, kind);
         }
+        else if (Match("{"))
+        {
+            // pattern = ParseObjectPattern(ref parameters, kind);
+            pattern = ParseListAssignmentNestedElementList(); // ADHOC: Allow function test(a, {b, c})
+        }
         else
         {
-            if (kind is VariableDeclarationKind.Const or VariableDeclarationKind.Let && MatchKeyword("let"))
+            // ADHOC: Adhoc allows deconstruction directly into attributes and static paths
+            if (arrayPattern)
             {
-                TolerateUnexpectedToken(_lookahead, Messages.LetInLexicalBinding);
-            }
+                parameters.Push(_lookahead);
+                pattern = ParseLeftHandSideExpression();
 
-            parameters.Push(_lookahead);
-            pattern = ParseVariableIdentifier(kind);
+            }
+            else
+            {
+                pattern = ParseVariableIdentifier(kind);
+            }
         }
 
         return pattern;
     }
 
-    private Node ParsePatternWithDefault(ref ArrayList<Token> parameters, VariableDeclarationKind? kind = null)
+    private Expression ParsePatternWithDefault(ref ArrayList<Token> parameters, VariableDeclarationKind? kind = null, bool arrayPattern = false)
     {
         var startToken = _lookahead;
 
-        var pattern = ParsePattern(ref parameters, kind);
+        var pattern = ParsePattern(ref parameters, kind, arrayPattern);
         if (Match("="))
         {
             NextToken();
@@ -2459,15 +2283,19 @@ public partial class AdhocAbstractSyntaxTree
 
             if (!_context.AllowYield)
             {
-                ThrowUnexpectedToken(token);
+                TolerateUnexpectedToken(token);
             }
+        }
+        else if (token.Type == TokenType.Keyword && (string?) token.Value == "import") // ADHOC HACK: (gt6/SaveDataUtil.ad, function import())
+        {
+            return Finalize(node, new Identifier((string) token.Value!));
         }
         else if (token.Type != TokenType.Identifier)
         {
             var stringValue = token.Value as string;
             if (_context.Strict || stringValue == null || stringValue != "let" || kind != VariableDeclarationKind.Var)
             {
-                ThrowUnexpectedToken(token);
+                TolerateUnexpectedToken(token);
             }
         }
         else if (_context.IsAsync && !allowAwaitKeyword && token.Type == TokenType.Identifier && (string?) token.Value == "await")
@@ -2500,7 +2328,7 @@ public partial class AdhocAbstractSyntaxTree
             Expect("=");
         }
 
-        return Finalize(node, new VariableDeclarator(id, init));
+        return Finalize(node, new VariableDeclarator((Identifier) id, init));
     }
 
     private NodeList<VariableDeclarator> ParseVariableDeclarationList(bool inFor)
@@ -2509,6 +2337,12 @@ public partial class AdhocAbstractSyntaxTree
 
         while (Match(","))
         {
+            if (IsEndOfFile())
+            {
+                TolerateUnexpectedToken(_lookahead);
+                break;
+            }
+
             NextToken();
             list.Push(ParseVariableDeclaration(inFor));
         }
@@ -2660,13 +2494,15 @@ public partial class AdhocAbstractSyntaxTree
         StatementListItem? init = null;
         Expression? test = null;
         Expression? update = null;
-        var forIn = true;
         Node? left = null;
         Expression? right = null;
         var @await = false;
 
         var node = CreateNode();
-        ExpectKeyword("for");
+
+        string? forKeyword = _lookahead.Value as string;
+        ExpectKeyword("for", "foreach");
+
         if (MatchContextualKeyword("await"))
         {
             if (!_context.IsAsync)
@@ -2698,34 +2534,16 @@ public partial class AdhocAbstractSyntaxTree
 
                 var previousAllowIn = _context.AllowIn;
                 _context.AllowIn = false;
-                var declarations = ParseVariableDeclarationList(inFor: true);
+
+                var declarations = ParseVariableDeclarationList(true);
                 _context.AllowIn = previousAllowIn;
 
-                if (declarations.Count == 1 && MatchKeyword("in"))
-                {
-                    if (@await)
-                    {
-                        TolerateUnexpectedToken(_lookahead);
-                    }
-
-                    var decl = declarations[0];
-                    if (decl.Init != null && (decl.Id.Type == Nodes.ArrayPattern || decl.Id.Type == Nodes.ObjectPattern || _context.Strict))
-                    {
-                        TolerateError(Messages.ForInOfLoopInitializer, "for-in");
-                    }
-
-                    left = Finalize(initNode, new VariableDeclaration(declarations, VariableDeclarationKind.Var));
-                    NextToken();
-                    right = ParseExpression();
-                    init = null;
-                }
-                else if (declarations.Count == 1 && declarations[0]!.Init == null && MatchContextualKeyword("of"))
+                if (forKeyword!.Equals("foreach", StringComparison.OrdinalIgnoreCase) && declarations.Count == 1 && declarations[0]!.Init == null && MatchContextualKeyword("in"))
                 {
                     left = Finalize(initNode, new VariableDeclaration(declarations, VariableDeclarationKind.Var));
                     NextToken();
                     right = ParseAssignmentExpression();
                     init = null;
-                    forIn = false;
                 }
                 else
                 {
@@ -2736,6 +2554,24 @@ public partial class AdhocAbstractSyntaxTree
 
                     init = Finalize(initNode, new VariableDeclaration(declarations, VariableDeclarationKind.Var));
                     Expect(";");
+                }
+            }
+            else if (Match("|")) // ADHOC: LIST_ASSIGN
+            {
+                var initNode = CreateNode();
+
+                var previousAllowIn = _context.AllowIn;
+                _context.AllowIn = false;
+                var variableList = ParseListAssignmentElementList();
+                _context.AllowIn = previousAllowIn;
+
+                if (forKeyword?.Equals("foreach", StringComparison.OrdinalIgnoreCase) == true && MatchContextualKeyword("in"))
+                {
+                    left = Finalize(initNode, variableList);
+                    NextToken();
+
+                    right = ParseAssignmentExpression();
+                    init = null;
                 }
             }
             else
@@ -2750,7 +2586,7 @@ public partial class AdhocAbstractSyntaxTree
                 init = InheritCoverGrammar(_parseAssignmentExpression);
                 _context.AllowIn = previousAllowIn;
 
-                if (MatchKeyword("in"))
+                if (MatchContextualKeyword("in"))
                 {
                     if (@await)
                     {
@@ -2763,22 +2599,9 @@ public partial class AdhocAbstractSyntaxTree
                     }
 
                     NextToken();
-                    left = ReinterpretExpressionAsPattern(init);
+                    left = ReinterpretExpressionAsPattern((Expression) init);
                     right = ParseExpression();
                     init = null;
-                }
-                else if (MatchContextualKeyword("of"))
-                {
-                    if (!_context.IsAssignmentTarget || init.Type == Nodes.AssignmentExpression)
-                    {
-                        TolerateError(Messages.InvalidLHSInForLoop);
-                    }
-
-                    NextToken();
-                    left = ReinterpretExpressionAsPattern(init);
-                    right = ParseAssignmentExpression();
-                    init = null;
-                    forIn = false;
                 }
                 else
                 {
@@ -2797,6 +2620,12 @@ public partial class AdhocAbstractSyntaxTree
                         var initSeq = new ArrayList<Expression>(new[] { (Expression) init });
                         while (Match(","))
                         {
+                            if (IsEndOfFile())
+                            {
+                                TolerateUnexpectedToken(_lookahead);
+                                break;
+                            }
+
                             NextToken();
                             initSeq.Push(IsolateCoverGrammar(_parseAssignmentExpression));
                         }
@@ -2842,15 +2671,13 @@ public partial class AdhocAbstractSyntaxTree
         }
 
         return left == null
-            ? Finalize(node, new ForStatement(init, test, update, body))
-            : forIn
-                ? Finalize(node, new ForInStatement(left, right!, body))
-                : Finalize(node, new ForOfStatement(left, right!, body, @await));
+                ? Finalize(node, new ForStatement(init, test, update, body))
+                : Finalize(node, new ForeachStatement(left, right!, body));
     }
 
     // https://tc39.github.io/ecma262/#sec-continue-statement
 
-    private ContinueStatement ParseContinueStatement()
+    private Statement ParseContinueStatement()
     {
         var node = CreateNode();
         ExpectKeyword("continue");
@@ -2863,14 +2690,16 @@ public partial class AdhocAbstractSyntaxTree
             var key = label.Name;
             if (!_context.LabelSet.Contains(key))
             {
-                return ThrowError<ContinueStatement>(Messages.UnknownLabel, label.Name);
+                TolerateError(Messages.UnknownLabel, label.Name);
+                return Finalize(node, new ErrorStatement());
             }
         }
 
         ConsumeSemicolon();
         if (label == null && !_context.InIteration)
         {
-            return ThrowError<ContinueStatement>(Messages.IllegalContinue);
+            TolerateError(Messages.IllegalContinue);
+            return Finalize(node, new ErrorStatement());
         }
 
         return Finalize(node, new ContinueStatement(label));
@@ -2878,7 +2707,7 @@ public partial class AdhocAbstractSyntaxTree
 
     // https://tc39.github.io/ecma262/#sec-break-statement
 
-    private BreakStatement ParseBreakStatement()
+    private Statement ParseBreakStatement()
     {
         var node = CreateNode();
         ExpectKeyword("break");
@@ -2891,14 +2720,16 @@ public partial class AdhocAbstractSyntaxTree
             var key = label.Name;
             if (!_context.LabelSet.Contains(key))
             {
-                return ThrowError<BreakStatement>(Messages.UnknownLabel, label.Name);
+                TolerateError(Messages.UnknownLabel, label.Name);
+                return Finalize(node, new ErrorStatement());
             }
         }
 
         ConsumeSemicolon();
         if (label == null && !_context.InIteration && !_context.InSwitch)
         {
-            return ThrowError<BreakStatement>(Messages.IllegalBreak);
+            TolerateError(Messages.IllegalBreak);
+            return Finalize(node, new ErrorStatement());
         }
 
         return Finalize(node, new BreakStatement(label));
@@ -2908,11 +2739,6 @@ public partial class AdhocAbstractSyntaxTree
 
     private ReturnStatement ParseReturnStatement()
     {
-        if (!_context.InFunctionBody && !_allowReturnOutsideFunction)
-        {
-            ThrowError(Messages.IllegalReturn);
-        }
-
         var node = CreateNode();
         ExpectKeyword("return");
 
@@ -2950,6 +2776,12 @@ public partial class AdhocAbstractSyntaxTree
         var consequent = new ArrayList<Statement>();
         while (true)
         {
+            if (IsEndOfFile())
+            {
+                TolerateUnexpectedToken(_lookahead);
+                break;
+            }
+
             if (Match("}") || MatchKeyword("default") || MatchKeyword("case"))
             {
                 break;
@@ -2978,7 +2810,7 @@ public partial class AdhocAbstractSyntaxTree
         Expect("{");
         while (true)
         {
-            if (Match("}"))
+            if (Match("}") || IsEndOfFile())
             {
                 break;
             }
@@ -2988,7 +2820,7 @@ public partial class AdhocAbstractSyntaxTree
             {
                 if (defaultFound)
                 {
-                    ThrowError(Messages.MultipleDefaultsInSwitch);
+                    TolerateError(Messages.MultipleDefaultsInSwitch);
                 }
 
                 defaultFound = true;
@@ -3020,21 +2852,27 @@ public partial class AdhocAbstractSyntaxTree
             var key = id.Name;
             if (!_context.LabelSet.Add(key))
             {
-                ThrowError(Messages.Redeclaration, "Label", id.Name);
+                TolerateError(Messages.Redeclaration, "Label", id.Name);
             }
 
             Statement body;
+            if (MatchKeyword("class"))
+            {
+                TolerateUnexpectedToken(_lookahead);
+                body = ParseClassDeclaration();
+            }
+            else if (MatchKeyword("module"))
+            {
+                TolerateUnexpectedToken(_lookahead);
+                body = ParseModuleDeclaration();
+            }
             if (MatchKeyword("function"))
             {
                 var token = _lookahead;
-                var declaration = ParseFunctionDeclaration();
+                var declaration = ParseSubroutineDeclaration();
                 if (_context.Strict)
                 {
                     TolerateUnexpectedToken(token, Messages.StrictFunction);
-                }
-                else if (declaration.Generator)
-                {
-                    TolerateUnexpectedToken(token, Messages.GeneratorInLegacyContext);
                 }
 
                 body = declaration;
@@ -3066,7 +2904,7 @@ public partial class AdhocAbstractSyntaxTree
 
         if (_hasLineTerminator)
         {
-            ThrowError(Messages.NewlineAfterThrow);
+            TolerateError(Messages.NewlineAfterThrow);
         }
 
         var argument = ParseExpression();
@@ -3089,7 +2927,7 @@ public partial class AdhocAbstractSyntaxTree
             Expect("(");
             if (Match(")"))
             {
-                ThrowUnexpectedToken(_lookahead);
+                TolerateUnexpectedToken(_lookahead);
             }
 
             var parameters = _parseVariableBindingParameters ?? new ArrayList<Token>();
@@ -3132,14 +2970,10 @@ public partial class AdhocAbstractSyntaxTree
 
         var block = ParseBlock();
         var handler = MatchKeyword("catch") ? ParseCatchClause() : null;
-        var finalizer = MatchKeyword("finally") ? ParseFinallyClause() : null;
 
-        if (handler == null && finalizer == null)
-        {
-            return ThrowError<TryStatement>(Messages.NoCatchOrFinally);
-        }
+        // Adhoc: finalizer not part of it.
 
-        return Finalize(node, new TryStatement(block, handler, finalizer));
+        return Finalize(node, new TryStatement(block, handler));
     }
 
     // https://tc39.github.io/ecma262/#sec-ecmascript-language-statements-and-declarations
@@ -3150,12 +2984,10 @@ public partial class AdhocAbstractSyntaxTree
         switch (_lookahead.Type)
         {
             case TokenType.BooleanLiteral:
-            case TokenType.NullLiteral:
+            case TokenType.NilLiteral:
             case TokenType.NumericLiteral:
-            case TokenType.BigIntLiteral:
             case TokenType.StringLiteral:
             case TokenType.Template:
-            case TokenType.RegularExpression:
                 statement = ParseExpressionStatement();
                 break;
 
@@ -3165,8 +2997,17 @@ public partial class AdhocAbstractSyntaxTree
                     case "{":
                         statement = ParseBlock();
                         break;
+                    case "|": // ADHOC: LIST_ASSIGN
+                        statement = ParseListAssignment();
+                        break;
                     case ";":
                         statement = ParseEmptyStatement();
+                        break;
+                    case "@":
+                        statement = ParsePragmaStatement();
+                        break;
+                    case "#":
+                        statement = ParsePreprocessorDirectiveStatement();
                         break;
                     case "(":
                     default:
@@ -3177,7 +3018,7 @@ public partial class AdhocAbstractSyntaxTree
                 break;
 
             case TokenType.Identifier:
-                statement = MatchAsyncFunction() ? ParseFunctionDeclaration() : ParseLabelledStatement();
+                statement = MatchAsyncFunction() ? ParseSubroutineDeclaration() : ParseLabelledStatement();
                 break;
 
             case TokenType.Keyword:
@@ -3193,10 +3034,14 @@ public partial class AdhocAbstractSyntaxTree
                         statement = ParseDoWhileStatement();
                         break;
                     case "for":
+                    case "foreach":
                         statement = ParseForStatement();
                         break;
                     case "function":
-                        statement = ParseFunctionDeclaration();
+                        statement = ParseSubroutineDeclaration();
+                        break;
+                    case "finally": // Adhoc: Scope/module finalizer
+                        statement = ParseFinalizer();
                         break;
                     case "if":
                         statement = ParseIfStatement();
@@ -3206,6 +3051,9 @@ public partial class AdhocAbstractSyntaxTree
                         break;
                     case "switch":
                         statement = ParseSwitchStatement();
+                        break;
+                    case "undef":
+                        statement = ParseUndefStatement();
                         break;
                     case "throw":
                         statement = ParseThrowStatement();
@@ -3219,15 +3067,39 @@ public partial class AdhocAbstractSyntaxTree
                     case "while":
                         statement = ParseWhileStatement();
                         break;
+
+                    case "require":
+                        statement = ParseRequireStatement();
+                        break;
+
+                    case "static": // ADHOC
+                        statement = ParseStaticStatement();
+                        break;
+                    case "attribute": // ADHOC
+                        statement = ParseAttributeStatement();
+                        break;
+                    case "delegate": // ADHOC
+                        statement = ParseDelegateDeclaration();
+                        break;
+                    case "print": // ADHOC
+                        statement = ParsePrintStatement();
+                        break;
+
                     default:
-                        statement = ParseExpressionStatement();
+                        {
+                            var node = CreateNode();
+                            statement = Finalize(node, ParseExpressionStatement());
+                        }
                         break;
                 }
 
                 break;
 
             default:
-                return ThrowUnexpectedToken<Statement>(_lookahead);
+                TolerateUnexpectedToken(_lookahead);
+                NextToken();
+
+                return new ErrorStatement();
         }
 
         return statement;
@@ -3235,19 +3107,12 @@ public partial class AdhocAbstractSyntaxTree
 
     private ExpressionStatement ParseDirective()
     {
-        var token = _lookahead;
-        string? directive = null;
-
         var node = CreateNode();
         var expr = ParseExpression();
-        if (expr.Type == Nodes.Literal)
-        {
-            directive = _scanner._source.Between(token.Start + 1, token.End - 1).ToInternedString(ref _scanner._stringPool);
-        }
 
         ConsumeSemicolon();
 
-        return Finalize(node, directive != null ? new Directive(expr, directive) : new ExpressionStatement(expr));
+        return Finalize(node, new ExpressionStatement(expr));
     }
 
     private ArrayList<Statement> ParseDirectivePrologues()
@@ -3255,7 +3120,7 @@ public partial class AdhocAbstractSyntaxTree
         Token? firstRestricted = null;
 
         var body = new ArrayList<Statement>();
-        while (true)
+        while (!IsEndOfFile())
         {
             var token = _lookahead;
 
@@ -3383,12 +3248,12 @@ public partial class AdhocAbstractSyntaxTree
         var arg = ParsePattern(ref parameters);
         if (Match("="))
         {
-            ThrowError(Messages.DefaultRestParameter);
+            TolerateError(Messages.DefaultRestParameter);
         }
 
         if (!Match(")"))
         {
-            ThrowError(Messages.ParameterAfterRestParameter);
+            TolerateError(Messages.ParameterAfterRestParameter);
         }
 
         return Finalize(node, new RestElement(arg));
@@ -3400,9 +3265,14 @@ public partial class AdhocAbstractSyntaxTree
         _parseVariableBindingParameters = null;
         parameters.Clear();
 
-        var param = Match("...")
-            ? ParseRestElement(ref parameters)
-            : ParsePatternWithDefault(ref parameters);
+        var param = ParsePatternWithDefault(ref parameters);
+        if (Match("...")) // ADHOC
+        {
+            Expect("...");
+
+            var node = CreateNode();
+            param = Finalize(node, new RestElement(param));
+        }
 
         for (var i = 0; i < parameters.Count; i++)
         {
@@ -3422,8 +3292,8 @@ public partial class AdhocAbstractSyntaxTree
         Expect("(");
         if (!Match(")"))
         {
-            options.Parameters = new ArrayList<Node>();
-            while (_lookahead.Type != TokenType.EOF)
+            options.Parameters = new ArrayList<Expression>();
+            while (!IsEndOfFile())
             {
                 ParseFormalParameter(ref options);
                 if (Match(")"))
@@ -3443,7 +3313,7 @@ public partial class AdhocAbstractSyntaxTree
 
         if (options.HasDuplicateParameterNames && (_context.Strict || !options.Simple))
         {
-            ThrowError(Messages.DuplicateParameter);
+            TolerateError(Messages.DuplicateParameter);
         }
 
         return new ParsedParameters
@@ -3466,13 +3336,13 @@ public partial class AdhocAbstractSyntaxTree
             var next = scanner.Lex(new LexOptions(context));
             scanner.RestoreState(state);
 
-            return state.LineNumber == next.LineNumber && next.Type == TokenType.Keyword && (string?) next.Value == "function";
+            return state.LineNumber == next.LineNumber && next.Type == TokenType.Keyword && ((string?) next.Value == "function" || (string?) next.Value == "method");
         }
 
         return MatchContextualKeyword("async") && ValidateMatch(_scanner, _context);
     }
 
-    private FunctionDeclaration ParseFunctionDeclaration(bool identifierIsOptional = false)
+    private Declaration ParseSubroutineDeclaration(bool identifierIsOptional = false)
     {
         var node = CreateNode();
         var isAsync = MatchContextualKeyword("async");
@@ -3486,7 +3356,10 @@ public partial class AdhocAbstractSyntaxTree
             NextToken();
         }
 
-        ExpectKeyword("function");
+        bool isMethod = MatchKeyword("method");
+        if (!MatchKeyword("function") && !isMethod)
+            TolerateUnexpectedToken(_lookahead);
+        NextToken();
 
         var isGenerator = Match("*");
         if (isGenerator)
@@ -3526,12 +3399,12 @@ public partial class AdhocAbstractSyntaxTree
         var body = ParseFunctionSourceElements();
         if (_context.Strict && firstRestricted != null)
         {
-            ThrowUnexpectedToken(firstRestricted.Value, message);
+            TolerateUnexpectedToken(firstRestricted.Value, message);
         }
 
         if (_context.Strict && stricted != null)
         {
-            ThrowUnexpectedToken(stricted.Value, message);
+            TolerateUnexpectedToken(stricted.Value, message);
         }
 
         var hasStrictDirective = _context.Strict;
@@ -3541,78 +3414,10 @@ public partial class AdhocAbstractSyntaxTree
         _context.AllowYield = previousAllowYield;
         _context.InClassStaticBlock = previousInClassStaticBlock;
 
-        var functionDeclaration = Finalize(node, new FunctionDeclaration(id, parameters, body, isGenerator, hasStrictDirective, isAsync));
-        return functionDeclaration;
-    }
-
-    private FunctionExpression ParseFunctionExpression()
-    {
-        var node = CreateNode();
-
-        var isAsync = MatchContextualKeyword("async");
-        if (isAsync)
-        {
-            NextToken();
-        }
-
-        ExpectKeyword("function");
-
-        var isGenerator = Match("*");
-        if (isGenerator)
-        {
-            NextToken();
-        }
-
-        string? message = null;
-        Expression? id = null;
-        Token? firstRestricted = null;
-
-        var previousInClassStaticBlock = _context.InClassStaticBlock;
-        var previousIsAsync = _context.IsAsync;
-        var previousAllowYield = _context.AllowYield;
-        _context.InClassStaticBlock = false;
-        _context.IsAsync = isAsync;
-        _context.AllowYield = !isGenerator;
-
-        if (!Match("("))
-        {
-            var token = _lookahead;
-            id = !_context.Strict && !isGenerator && MatchKeyword("yield")
-                ? ParseIdentifierName()
-                : ParseVariableIdentifier();
-        }
-
-        var formalParameters = ParseFormalParameters(firstRestricted);
-        var parameters = NodeList.From(ref formalParameters.Parameters);
-        var stricted = formalParameters.Stricted;
-        firstRestricted = formalParameters.FirstRestricted;
-        if (formalParameters.Message != null)
-        {
-            message = formalParameters.Message;
-        }
-
-        var previousStrict = _context.Strict;
-        var previousAllowStrictDirective = _context.AllowStrictDirective;
-        _context.AllowStrictDirective = formalParameters.Simple;
-        var body = ParseFunctionSourceElements();
-        if (_context.Strict && firstRestricted != null)
-        {
-            ThrowUnexpectedToken(firstRestricted.Value, message);
-        }
-
-        if (_context.Strict && stricted != null)
-        {
-            ThrowUnexpectedToken(stricted.Value, message);
-        }
-
-        var hasStrictDirective = _context.Strict;
-        _context.Strict = previousStrict;
-        _context.AllowStrictDirective = previousAllowStrictDirective;
-        _context.IsAsync = previousIsAsync;
-        _context.AllowYield = previousAllowYield;
-        _context.InClassStaticBlock = previousInClassStaticBlock;
-
-        return Finalize(node, new FunctionExpression((Identifier?) id, parameters, body, isGenerator, hasStrictDirective, isAsync));
+        if (!isMethod)
+            return Finalize(node, new FunctionDeclaration(id, parameters, body, isGenerator, hasStrictDirective, isAsync));
+        else
+            return Finalize(node, new MethodDeclaration(id, parameters, body, isGenerator, hasStrictDirective, isAsync));
     }
 
     // https://tc39.github.io/ecma262/#sec-method-definitions
@@ -3624,43 +3429,12 @@ public partial class AdhocAbstractSyntaxTree
             TokenType.Identifier or
             TokenType.StringLiteral or
             TokenType.BooleanLiteral or
-            TokenType.NullLiteral or
+            TokenType.NilLiteral or
             TokenType.NumericLiteral or
             TokenType.Keyword => true,
             TokenType.Punctuator => "[".Equals(token.Value) || "#".Equals(token.Value),
             _ => false
         };
-    }
-
-    private FunctionExpression ParseMethod(bool isAsync, bool generator)
-    {
-        var node = CreateNode();
-
-        var previousInClassStaticBlock = _context.InClassStaticBlock;
-        var previousIsAsync = _context.IsAsync;
-        var previousAllowYield = _context.AllowYield;
-        var previousAllowSuperAccess = _context.AllowSuperAccess;
-        var previousAllowSuperCall = _context.AllowSuperCall;
-
-        _context.InClassStaticBlock = false;
-        _context.IsAsync = isAsync;
-        _context.AllowYield = true;
-        _context.AllowSuperAccess = true;
-        _context.AllowSuperCall = false;
-
-        var formalParameters = ParseFormalParameters();
-
-        _context.AllowYield = !generator;
-
-        var method = ParsePropertyMethod(ref formalParameters, out var hasStrictDirective);
-
-        _context.IsAsync = previousIsAsync;
-        _context.AllowYield = previousAllowYield;
-        _context.AllowSuperAccess = previousAllowSuperAccess;
-        _context.AllowSuperCall = previousAllowSuperCall;
-        _context.InClassStaticBlock = previousInClassStaticBlock;
-
-        return Finalize(node, new FunctionExpression(null, NodeList.From(ref formalParameters.Parameters), method, generator, hasStrictDirective, isAsync));
     }
 
     // https://tc39.github.io/ecma262/#sec-generator-function-definitions
@@ -3720,165 +3494,786 @@ public partial class AdhocAbstractSyntaxTree
         return Finalize(node, new YieldExpression(argument, delegat));
     }
 
-    // import {<foo as bar>} ...;
-    private ImportSpecifier ParseImportSpecifier()
+    // ADHOC ZONE
+
+    #region Adhoc
+
+    private Expression ParseVariableIdentifierAllowStatic(VariableDeclarationKind? kind = null)
+    {
+        var node = CreateNode();
+        bool isTopLevelScopeResolution = Match("::");
+        if (isTopLevelScopeResolution)
+            NextToken();
+
+        var token = NextToken();
+
+        if (token.Type != TokenType.Identifier)
+        {
+            var stringValue = token.Value as string;
+            if (_context.Strict || stringValue == null || kind != VariableDeclarationKind.Var)
+            {
+                TolerateUnexpectedToken(token);
+            }
+        }
+        else if ((_context.IsModule || _context.IsAsync) && token.Type == TokenType.Identifier && (string?) token.Value == "await")
+        {
+            TolerateUnexpectedToken(token);
+        }
+
+        string? str = (string?) token.Value;
+        while ((string?) _lookahead.Value == "::")
+        {
+            if (IsEndOfFile())
+            {
+                TolerateUnexpectedToken(_lookahead);
+                break;
+            }
+
+            NextToken();
+            token = NextToken();
+            str += "::";
+            str += token.Value;
+        }
+
+        // TODO Fix
+        if (!string.IsNullOrEmpty(str) && str!.EndsWith("::", StringComparison.OrdinalIgnoreCase))
+            str = str.Substring(0, str.Length - 2);
+
+        var id = new Identifier(str!);
+        if (isTopLevelScopeResolution)
+            return Finalize(node, new StaticIdentifier(id));
+        else
+            return Finalize(node, id);
+    }
+
+    private ClassDeclaration ParseClassDeclaration(bool identifierIsOptional = false)
     {
         var node = CreateNode();
 
-        Identifier local;
-        Expression imported;
+        var previousStrict = _context.Strict;
+        var previousAllowSuper = _context.AllowSuperAccess;
+        _context.Strict = true;
 
-        if (_lookahead.Type == TokenType.Identifier)
+        ExpectKeyword("class");
+
+        // Regular class or module declaration
+        var id = identifierIsOptional && _lookahead.Type != TokenType.Identifier
+            ? null
+            : ParseVariableIdentifierAllowStatic();
+
+        Expression? superClass = null;
+
+        // ADHOC: ':' instead of extends
+        if (Match(":"))
         {
-            imported = local = ParseVariableIdentifier(allowAwaitKeyword: true);
-
-            if (MatchContextualKeyword("as"))
-            {
-                NextToken();
-                local = ParseVariableIdentifier();
-            }
-        }
-        else
-        {
-            imported = ParseIdentifierName();
-
-            if (MatchContextualKeyword("as"))
-            {
-                NextToken();
-                local = ParseVariableIdentifier();
-            }
-            else
-            {
-                ThrowUnexpectedToken(NextToken());
-                local = default!; // never executes, just keeps the compilery happy
-            }
+            NextToken();
+            superClass = IsolateCoverGrammar(ParseStaticIdentifierName);
+            _context.AllowSuperAccess = true;
         }
 
-        return Finalize(node, new ImportSpecifier(local, imported));
+        var classBody = ParseBlock();
+        _context.Strict = previousStrict;
+        _context.AllowSuperAccess = previousAllowSuper;
+
+        return Finalize(node, new ClassDeclaration(id, superClass, classBody));
     }
 
-    // {foo, bar as bas}
-    private ArrayList<ImportSpecifier> ParseNamedImports()
+    private Identifier ParseStaticIdentifierName()
     {
-        Expect("{");
-        var specifiers = new ArrayList<ImportSpecifier>();
-        while (!Match("}"))
+        var node = CreateNode();
+        var token = NextToken();
+        if (!IsIdentifierName(token))
         {
-            specifiers.Push(ParseImportSpecifier());
-            if (!Match("}"))
-            {
-                Expect(",");
-            }
+            TolerateUnexpectedToken(token);
+            return Finalize(node, new Identifier(string.Empty));
         }
 
-        Expect("}");
+        string id = (string) token.Value!;
 
-        return specifiers;
+        while (Match("::"))
+        {
+            if (IsEndOfFile())
+            {
+                TolerateUnexpectedToken(_lookahead);
+                break;
+            }
+
+            id += NextToken().Value as string;
+            token = NextToken();
+
+            if (!IsIdentifierName(token))
+            {
+                TolerateUnexpectedToken(_lookahead);
+                break;
+            }
+
+            id += token.Value as string;
+        }
+
+        return Finalize(node, new Identifier(id));
     }
 
-    // import <foo> ...;
-    private ImportDefaultSpecifier ParseImportDefaultSpecifier()
+    private ImportDefaultSpecifier ParseImportSpecifier()
     {
         var node = CreateNode();
         var local = ParseIdentifierName();
         return Finalize(node, new ImportDefaultSpecifier(local));
     }
 
-    // import <* as foo> ...;
-    private ImportNamespaceSpecifier ParseImportNamespaceSpecifier()
+    // import *;
+    private Identifier ParseImportAll()
     {
         var node = CreateNode();
 
         Expect("*");
-        if (!MatchContextualKeyword("as"))
-        {
-            ThrowError(Messages.NoAsAfterImportNamespace);
-        }
-
         NextToken();
-        var local = ParseIdentifierName();
 
-        return Finalize(node, new ImportNamespaceSpecifier(local));
+        return Finalize(node, new Identifier("*"));
     }
 
-    private ImportDeclaration ParseImportDeclaration()
+    private ImportDeclaration ParseImportDeclaration() // ADHOC
     {
-        if (_context.InFunctionBody)
-        {
-            ThrowError(Messages.IllegalImportDeclaration);
-        }
-
         var node = CreateNode();
         ExpectKeyword("import");
 
-        Literal src;
-        var specifiers = new ArrayList<ImportDeclarationSpecifier>();
+        var namespacePath = new ArrayList<ImportDeclarationSpecifier>();
 
-        if (Match("*"))
+        Identifier? target = null;
+        Identifier? alias = null;
+        if (IsIdentifierName(_lookahead))
         {
-            // import * as foo
-            specifiers.Push(ParseImportNamespaceSpecifier());
-        }
-        else if (IsIdentifierName(_lookahead) && !MatchKeyword("default"))
-        {
+            ImportDefaultSpecifier mainNamespace = ParseImportSpecifier();
+            namespacePath.Push(mainNamespace);
+
             // import foo
-            specifiers.Push(ParseImportDefaultSpecifier());
-            if (Match(","))
+            while (Match("::") || Match("*"))
             {
+                if (IsEndOfFile())
+                {
+                    TolerateUnexpectedToken(_lookahead);
+                    break;
+                }
+
+                bool isStaticPathAccess = Match("::");
+
+                if (isStaticPathAccess)
+                {
+                    NextToken();
+                    if (Match("*"))
+                    {
+                        target = ParseImportAll();
+                        break;
+                    }
+                    else if (_lookahead.Type == TokenType.Identifier)
+                    {
+                        namespacePath.Push(ParseImportSpecifier());
+                        continue;
+                    }
+                    else
+                        TolerateUnexpectedToken(_lookahead);
+                }
+                else if (Match("*"))
+                {
+                    target = ParseImportAll();
+                    break;
+                }
+
                 NextToken();
-                if (Match("*"))
-                {
-                    // import foo, * as foo
-                    specifiers.Push(ParseImportNamespaceSpecifier());
-                }
-                else if (Match("{"))
-                {
-                    // import foo, {bar}
-                    specifiers.AddRange(ParseNamedImports());
-                }
-                else
-                {
-                    ThrowUnexpectedToken(_lookahead);
-                }
             }
         }
         else
         {
-            ThrowUnexpectedToken(NextToken());
+            TolerateUnexpectedToken(NextToken());
         }
 
-        NextToken();
-        src = ParseModuleSpecifier();
+        if (MatchContextualKeyword("as"))
+        {
+            NextToken();
+            alias = ParseIdentifierName();
+        }
+
+        if (target is null && namespacePath.Count >= 1)
+            target = namespacePath.Pop().Local;
 
         ConsumeSemicolon();
 
-        return Finalize(node, new ImportDeclaration(NodeList.From(ref specifiers), src));
+        return Finalize(node, new ImportDeclaration(NodeList.From(ref namespacePath), target!, alias));
     }
 
-    private Literal ParseModuleSpecifier()
+    private DelegateDeclaration ParseDelegateDeclaration()
+    {
+        var node = CreateNode();
+        ExpectKeyword("delegate");
+
+        var identifier = ParseIdentifierName();
+        ConsumeSemicolon();
+
+        return Finalize(node, new DelegateDeclaration(identifier, VariableDeclarationKind.Delegate));
+    }
+
+    private Statement ParseModuleDeclaration()
     {
         var node = CreateNode();
 
-        if (_lookahead.Type != TokenType.StringLiteral)
+        var previousStrict = _context.Strict;
+        var previousAllowSuper = _context.AllowSuperAccess;
+        _context.Strict = true;
+
+        ExpectKeyword("module");
+
+        // ADHOC: Module Constructor
+
+        if (Match("("))
         {
-            ThrowError(Messages.InvalidModuleSpecifier);
+            NextToken();
+            var expr = IsolateCoverGrammar(_parseExpression);
+            Expect(")");
+
+            var classBody = ParseBlock();
+            _context.Strict = previousStrict;
+
+            return Finalize(node, new ModuleConstructorStatement(expr, classBody));
+        }
+        else
+        {
+
+            // Regular class or module declaration
+            var id = ParseVariableIdentifierAllowStatic();
+
+            var moduleBody = ParseBlock();
+            _context.Strict = previousStrict;
+            _context.AllowSuperAccess = previousAllowSuper;
+
+            return Finalize(node, new ModuleDeclaration(id, moduleBody));
+        }
+    }
+
+    private Statement ParsePragmaStatement()
+    {
+        var node = CreateNode();
+        Expect("@");
+
+        Statement statement;
+        if (MatchContextualKeyword("dump"))
+        {
+            NextToken();
+
+            Expression path = ParseLeftHandSideExpression();
+            statement = new PragmaDumpStatement(path);
+        }
+        else if (MatchContextualKeyword("exec"))
+        {
+            NextToken();
+
+            BlockStatement path = ParseBlock();
+            statement = new PragmaExecStatement(path);
+        }
+        else if (MatchContextualKeyword("current_module"))
+        {
+            NextToken();
+
+            Expression path = ParseLeftHandSideExpression();
+            statement = new PragmaCurrentModuleStatement(path);
+        }
+        else if (MatchContextualKeyword("include"))
+        {
+            NextToken();
+
+            if (_lookahead.Type == TokenType.Template || _lookahead.Type == TokenType.StringLiteral)
+            {
+                var path = NextToken();
+
+                statement = new PragmaIncludeStatement(new Literal((string) path.Value!, path.RawTemplate!));
+            }
+            else
+            {
+                TolerateError("Expected string literal for include statement value.", _lookahead.Value);
+                statement = new PragmaIncludeStatement(null);
+            }
+        }
+        else if (MatchKeyword("attribute") || MatchKeyword("static") || MatchKeyword("delegate") || MatchKeyword("function") ||
+            MatchKeyword("method") || MatchKeyword("module") || MatchKeyword("class"))
+        {
+            Identifier typeName = ParseIdentifierName();
+
+            // TODO: declarations may be paths too. support that potentially.
+            var declarations = ParseVariableDeclarationList(false);
+            ConsumeSemicolon();
+
+            statement = new PragmaVarStatement(typeName, new VariableDeclaration(declarations, VariableDeclarationKind.Var));
+        }
+        else if (MatchContextualKeyword("no_strict"))
+        {
+            NextToken();
+
+            statement = new PragmaNoStrictStatement();
+        }
+        else if (MatchContextualKeyword("use_strict"))
+        {
+            NextToken();
+
+            statement = new PragmaUseStrictStatement();
+        }
+        else if (MatchContextualKeyword("push_strict"))
+        {
+            NextToken();
+
+            Literal literal;
+            switch (_lookahead.Type)
+            {
+                case TokenType.NumericLiteral:
+                    {
+                        _context.IsAssignmentTarget = false;
+                        _context.IsBindingElement = false;
+                        var token = NextToken();
+                        var raw = GetTokenRaw(token);
+                        literal = Finalize(node, new Literal(TokenType.StringLiteral, token.Value, raw));
+                        statement = new PragmaPushStrictStatement(literal);
+                    }
+                    break;
+
+                case TokenType.BooleanLiteral:
+                    {
+                        _context.IsAssignmentTarget = false;
+                        _context.IsBindingElement = false;
+                        var token = NextToken();
+                        var raw = GetTokenRaw(token);
+                        literal = Finalize(node, new Literal("true".Equals(token.Value), raw));
+                        statement = new PragmaPushStrictStatement(literal);
+                    }
+                    break;
+
+                default:
+                    TolerateUnexpectedToken(_lookahead);
+                    statement = new PragmaPushStrictStatement(null);
+                    break;
+            }
+        }
+        else if (MatchContextualKeyword("pop_strict"))
+        {
+            NextToken();
+
+            statement = new PragmaPopStrictStatement();
+        }
+        else
+        {
+            statement = new ErrorStatement();
         }
 
-        var token = NextToken();
-        var raw = GetTokenRaw(token);
-        return Finalize(node, new Literal((string) token.Value!, raw));
+        ConsumeSemicolon();
+
+        return Finalize(node, statement);
     }
 
-    [DoesNotReturn]
-    internal void ThrowError(string messageFormat, params object?[] values)
+    private ListAssignementExpression ParseListAssignmentElementList()
     {
-        throw CreateError(messageFormat, values).ToException();
+        Expect("|");
+        var marker = CreateNode();
+        var list = ParseListAssignmentElements();
+
+        var hasRestElement = false;
+        if (Match("..."))
+        {
+            hasRestElement = true;
+            NextToken();
+        }
+
+        Expect("|");
+
+        return Finalize(marker, new ListAssignementExpression(NodeList.From(ref list), hasRestElement));
     }
 
-    [DoesNotReturn]
-    internal T ThrowError<T>(string messageFormat, params object?[] values)
+    private ListAssignmentStatement ParseListAssignment()
     {
-        throw CreateError(messageFormat, values).ToException();
+        var node = CreateNode();
+        var elements = ParseListAssignmentElementList();
+
+        if (!Match("="))
+            TolerateUnexpectedToken(_lookahead);
+        NextToken();
+
+        var init = IsolateCoverGrammar(_parseAssignmentExpression);
+        ConsumeSemicolon();
+
+        return Finalize(node, new ListAssignmentStatement(elements, init));
+    }
+
+    private ListAssignementExpression ParseListAssignmentNestedElementList()
+    {
+        Expect("{");
+        var marker = CreateNode();
+        var list = ParseListAssignmentElements();
+
+        var hasRestElement = false;
+        if (Match("..."))
+        {
+            hasRestElement = true;
+            NextToken();
+        }
+
+        Expect("}");
+
+        return Finalize(marker, new ListAssignementExpression(NodeList.From(ref list), hasRestElement));
+    }
+
+    private ArrayList<Node> ParseListAssignmentElements()
+    {
+        var list = new ArrayList<Node>();
+        list.Push(ParseListAssignmentElement());
+
+        while (Match(","))
+        {
+            if (IsEndOfFile())
+            {
+                TolerateUnexpectedToken(_lookahead);
+                break;
+            }
+
+            NextToken();
+            list.Push(ParseListAssignmentElement());
+        }
+
+        return list;
+    }
+
+    // ADHOC: For LIST_ASSIGN
+    private Node ParseListAssignmentElement()
+    {
+        var node = CreateNode();
+        if (MatchKeyword("var"))
+        {
+            NextToken();
+
+            var id = ParseIdentifierName();
+            return Finalize(node, new VariableDeclarator(id, null));
+        }
+        else if (Match("{"))
+        {
+            return ParseListAssignmentNestedElementList();
+        }
+        else
+        {
+            return ParseLeftHandSideExpression();
+        }
+    }
+
+    private Expression ParseArrayOrMapInitializer()
+    {
+        var node = CreateNode();
+        ArrayList<Expression?> arrElements = new();
+        ArrayList<MapElement> map = new();
+
+        bool isMap = false;
+        Expect("[");
+
+        // ADHOC: Added Map/KV support
+        while (!Match("]"))
+        {
+            if (IsEndOfFile())
+            {
+                TolerateUnexpectedToken(_lookahead);
+                break;
+            }
+
+            if (Match(","))
+            {
+                NextToken();
+                arrElements.Add(null);
+            }
+            else if (Match(":"))
+            {
+                if (arrElements.Count > 0)
+                {
+                    TolerateUnexpectedToken(_lookahead, "Found mixed map and array elements in expression.");
+                    break;
+                }
+
+                isMap = true;
+                NextToken(); // Empty Map
+            }
+            else
+            {
+                var mark = CreateNode();
+                var elem = InheritCoverGrammar(_parseAssignmentExpression);
+                if (Match(":"))
+                {
+                    if (arrElements.Count > 0)
+                    {
+                        TolerateUnexpectedToken(_lookahead, "Found mixed map and array elements in expression.");
+                        break;
+                    }
+
+                    isMap = true;
+                    NextToken();
+                    var value = InheritCoverGrammar(_parseAssignmentExpression);
+                    map.Add(Finalize(mark, new MapElement(elem, value)));
+                }
+                else if (isMap)
+                {
+                    TolerateUnexpectedToken(_lookahead, "Element is a map, expected key/value.");
+                    break;
+                }
+                else
+                {
+                    arrElements.Add(elem);
+                }
+
+                if (!Match("]"))
+                {
+                    Expect(",");
+                }
+            }
+        }
+
+        Expect("]");
+
+        if (isMap)
+            return Finalize(node, new MapExpression(NodeList.From(ref map)));
+        else
+            return Finalize(node, new ArrayExpression(NodeList.From(ref arrElements)));
+    }
+
+    private StaticDeclaration ParseStaticStatement()
+    {
+        var node = CreateNode();
+        ExpectKeyword("static");
+
+        var exp = ParseVariableDeclaration(false);
+        ConsumeSemicolon();
+
+        return Finalize(node, new StaticDeclaration(exp, VariableDeclarationKind.Static));
+    }
+
+    private AttributeDeclaration ParseAttributeStatement()
+    {
+        var node = CreateNode();
+        ExpectKeyword("attribute");
+
+        var exp = ParseAssignmentExpression();
+        ConsumeSemicolon();
+
+        return Finalize(node, new AttributeDeclaration(exp, VariableDeclarationKind.Attribute));
+    }
+
+    private FunctionExpression ParseFunctionExpression()
+    {
+        var node = CreateNode();
+
+        var isAsync = MatchContextualKeyword("async");
+        if (isAsync)
+        {
+            NextToken();
+        }
+
+        ExpectKeyword("function");
+
+        var isGenerator = Match("*");
+        if (isGenerator)
+        {
+            NextToken();
+        }
+
+        string? message = null;
+        Expression? id = null;
+        Token? firstRestricted = null;
+
+        var previousIsAsync = _context.IsAsync;
+        var previousAllowYield = _context.AllowYield;
+        _context.IsAsync = isAsync;
+        _context.AllowYield = !isGenerator;
+
+        if (!Match("("))
+        {
+            var token = _lookahead;
+            id = !_context.Strict && !isGenerator && MatchKeyword("yield")
+                ? ParseIdentifierName()
+                : ParseVariableIdentifier();
+        }
+
+        var formalParameters = ParseFormalParameters(firstRestricted);
+        var parameters = NodeList.From(ref formalParameters.Parameters);
+        var stricted = formalParameters.Stricted;
+        firstRestricted = formalParameters.FirstRestricted;
+        if (formalParameters.Message != null)
+        {
+            message = formalParameters.Message;
+        }
+
+        var previousStrict = _context.Strict;
+        var previousAllowStrictDirective = _context.AllowStrictDirective;
+        _context.AllowStrictDirective = formalParameters.Simple;
+        var body = ParseFunctionSourceElements();
+
+        var hasStrictDirective = _context.Strict;
+        _context.Strict = previousStrict;
+        _context.AllowStrictDirective = previousAllowStrictDirective;
+        _context.IsAsync = previousIsAsync;
+        _context.AllowYield = previousAllowYield;
+
+        return Finalize(node, new FunctionExpression((Identifier?) id, parameters, body, isGenerator, hasStrictDirective, isAsync));
+    }
+
+    private MethodExpression ParseMethodExpression()
+    {
+        var node = CreateNode();
+
+        var isAsync = MatchContextualKeyword("async");
+        if (isAsync)
+        {
+            NextToken();
+        }
+
+        ExpectKeyword("method");
+
+        var isGenerator = Match("*");
+        if (isGenerator)
+        {
+            NextToken();
+        }
+
+        string? message = null;
+        Expression? id = null;
+        Token? firstRestricted = null;
+
+        var previousIsAsync = _context.IsAsync;
+        var previousAllowYield = _context.AllowYield;
+        _context.IsAsync = isAsync;
+        _context.AllowYield = !isGenerator;
+
+        if (!Match("("))
+        {
+            var token = _lookahead;
+            id = !_context.Strict && !isGenerator && MatchKeyword("yield")
+                ? ParseIdentifierName()
+                : ParseVariableIdentifier();
+        }
+
+        var formalParameters = ParseFormalParameters(firstRestricted);
+        var parameters = NodeList.From(ref formalParameters.Parameters);
+        var stricted = formalParameters.Stricted;
+        firstRestricted = formalParameters.FirstRestricted;
+        if (formalParameters.Message != null)
+        {
+            message = formalParameters.Message;
+        }
+
+        var previousStrict = _context.Strict;
+        var previousAllowStrictDirective = _context.AllowStrictDirective;
+        _context.AllowStrictDirective = formalParameters.Simple;
+        var body = ParseFunctionSourceElements();
+
+        var hasStrictDirective = _context.Strict;
+        _context.Strict = previousStrict;
+        _context.AllowStrictDirective = previousAllowStrictDirective;
+        _context.IsAsync = previousIsAsync;
+        _context.AllowYield = previousAllowYield;
+
+        return Finalize(node, new MethodExpression((Identifier?) id, parameters, body, isGenerator, hasStrictDirective, isAsync));
+    }
+
+    private Statement ParseUndefStatement()
+    {
+        var node = CreateNode();
+        ExpectKeyword("undef");
+
+        if (_hasLineTerminator)
+        {
+            TolerateError(Messages.NewlineAfterThrow);
+            return Finalize(node, new ErrorStatement());
+        }
+
+        var expr = ParseVariableIdentifierAllowStatic();
+        ConsumeSemicolon();
+
+        return Finalize(node, new UndefStatement(expr));
+    }
+
+    // ADHOC: Object finalizer
+    private FinalizerStatement ParseFinalizer()
+    {
+        var node = CreateNode();
+        ExpectKeyword("finally");
+
+        var block = ParseBlock();
+        return Finalize(node, new FinalizerStatement(block));
+    }
+
+    // ADHOC: self object finalizer
+    private SelfFinalizerExpression ParseSelfFinalizer()
+    {
+        var node = CreateNode();
+        ExpectKeyword("finally");
+
+        var block = ParseBlock();
+        return Finalize(node, new SelfFinalizerExpression(block));
+    }
+
+    // ADHOC: Print Statement
+    private PrintStatement ParsePrintStatement()
+    {
+        var node = CreateNode();
+        ExpectKeyword("print");
+
+        List<Expression> expressions = new List<Expression>();
+        do
+        {
+            if (IsEndOfFile())
+            {
+                TolerateUnexpectedToken(_lookahead);
+                break;
+            }
+
+            var exp = ParseExpression();
+            expressions.Add(exp);
+        }
+        while (Match(","));
+
+        ConsumeSemicolon();
+
+        return Finalize(node, new PrintStatement(NodeList.Create(expressions)));
+    }
+
+    private RequireStatement ParseRequireStatement()
+    {
+        var node = CreateNode();
+        NextToken();
+
+        Expression expr = ParseExpression();
+        return Finalize(node, new RequireStatement(expr));
+    }
+
+    private Statement ParsePreprocessorDirectiveStatement()
+    {
+        var node = CreateNode();
+        Expect("#");
+
+        if (_lookahead.Type == TokenType.NumericLiteral)
+        {
+            int line = (int) _lookahead.Value!;
+            NextToken();
+
+            // We need to set this before parsing the source string, since _lookahead will be set in NextToken().
+            _scanner._lineNumber = line - 1;
+            _startMarker = new Marker(_startMarker.Index, line - 1, _startMarker.Column);
+            _lastMarker = new Marker(_lastMarker.Index, line - 1, _lastMarker.Column);
+
+            var fileToken = NextToken();
+            SetFileName(fileToken.RawTemplate!);
+
+            return new SourceFileStatement(new Literal(fileToken.RawTemplate!, fileToken.RawTemplate!));
+        }
+        else
+        {
+            TolerateUnexpectedToken(_lookahead, "Unexpected token for preprocessor directive statement");
+        }
+
+        return Finalize(node, new ErrorStatement());
+    }
+    #endregion
+
+    private void SetFileName(string fileName)
+    {
+        _scanner._sourceLocation = fileName;
     }
 
     private ParseError CreateError(string messageFormat, params object?[] values)
@@ -3946,20 +4341,6 @@ public partial class AdhocAbstractSyntaxTree
         }
     }
 
-    [DoesNotReturn]
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private protected T ThrowUnexpectedToken<T>(in Token token = default, string? message = null)
-    {
-        throw UnexpectedTokenError(token, message).ToException();
-    }
-
-    [DoesNotReturn]
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private protected void ThrowUnexpectedToken(in Token token = default, string? message = null)
-    {
-        throw UnexpectedTokenError(token, message).ToException();
-    }
-
     private protected void TolerateUnexpectedToken(in Token token, string? message = null)
     {
         _errorHandler.Tolerate(UnexpectedTokenError(token, message), _tolerant);
@@ -3978,7 +4359,7 @@ public partial class AdhocAbstractSyntaxTree
         private HashSet<string?>? paramSet;
         public Token? FirstRestricted;
         public string? Message;
-        public ArrayList<Node> Parameters = new();
+        public ArrayList<Expression> Parameters = new();
         public Token? Stricted;
         public bool Simple;
         public bool HasDuplicateParameterNames;

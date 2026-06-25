@@ -1,6 +1,6 @@
 ﻿namespace Esprima.Ast;
 
-public abstract class BindingPattern : Node
+public abstract class BindingPattern : Expression
 {
     protected BindingPattern(Nodes type) : base(type)
     {

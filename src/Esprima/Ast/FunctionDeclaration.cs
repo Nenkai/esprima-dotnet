@@ -5,11 +5,11 @@ namespace Esprima.Ast;
 [VisitableNode(ChildProperties = new[] { nameof(Id), nameof(Params), nameof(Body) })]
 public sealed partial class FunctionDeclaration : Declaration, IFunction
 {
-    private readonly NodeList<Node> _params;
+    private readonly NodeList<Expression> _params;
 
     public FunctionDeclaration(
         Identifier? id,
-        in NodeList<Node> parameters,
+        in NodeList<Expression> parameters,
         BlockStatement body,
         bool generator,
         bool strict,
@@ -28,10 +28,10 @@ public sealed partial class FunctionDeclaration : Declaration, IFunction
     /// <summary>
     /// { <see cref="Identifier"/> | <see cref="BindingPattern"/> | <see cref="AssignmentPattern"/> | <see cref="RestElement"/> }
     /// </summary>
-    public ref readonly NodeList<Node> Params { [MethodImpl(MethodImplOptions.AggressiveInlining)] get => ref _params; }
+    public ref readonly NodeList<Expression> Params { [MethodImpl(MethodImplOptions.AggressiveInlining)] get => ref _params; }
 
     public BlockStatement Body { [MethodImpl(MethodImplOptions.AggressiveInlining)] get; }
-    StatementListItem IFunction.Body => Body;
+    BlockStatement IFunction.Body => Body;
 
     public bool Generator { [MethodImpl(MethodImplOptions.AggressiveInlining)] get; }
     bool IFunction.Expression => false;
@@ -39,7 +39,7 @@ public sealed partial class FunctionDeclaration : Declaration, IFunction
     public bool Async { [MethodImpl(MethodImplOptions.AggressiveInlining)] get; }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private FunctionDeclaration Rewrite(Identifier? id, in NodeList<Node> @params, BlockStatement body)
+    private FunctionDeclaration Rewrite(Identifier? id, in NodeList<Expression> @params, BlockStatement body)
     {
         return new FunctionDeclaration(id, @params, body, Generator, Strict, Async);
     }
