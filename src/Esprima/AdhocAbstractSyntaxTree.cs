@@ -2403,8 +2403,9 @@ public partial class AdhocAbstractSyntaxTree
 
         if (!Match(")") && _tolerant)
         {
+            var consequentNode = CreateNode();
             TolerateUnexpectedToken(NextToken());
-            consequent = Finalize(CreateNode(), new EmptyStatement());
+            consequent = Finalize(consequentNode, new EmptyStatement());
         }
         else
         {
